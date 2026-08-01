@@ -1,0 +1,23 @@
+{
+  "name": "Java 拼图游戏测试集",
+  "description": "验证 CodeGuard 对 Java 项目的理解能力，覆盖7种查询类型，基于 puzzlegame 项目",
+  "target_hint": "C:/Users/卢鹏/Desktop/all in/JAVA游戏/Jigsaw/puzzlegame/puzzlegame",
+  "questions": [
+    {"id":1,"category":"callers","question":"谁调用了 getCode 函数？","expected_type":"callers","expected_target":"getCode","min_count":2,"keywords":["LoginJFrame"],"description":"查询 getCode 的所有调用者"},
+    {"id":2,"category":"callers","question":"readUserInfo 被谁调用了？","expected_type":"callers","expected_target":"readUserInfo","min_count":1,"keywords":["LoginJFrame"],"description":"查询 readUserInfo 的调用者"},
+    {"id":3,"category":"callers","question":"哪些地方调用了 initImage 方法？","expected_type":"callers","expected_target":"initImage","min_count":1,"keywords":["GameJFrame"],"description":"查询 initImage 的调用者"},
+    {"id":4,"category":"callees","question":"LoginJFrame 的构造方法调用了哪些函数？","expected_type":"callees","expected_target":"LoginJFrame","min_count":3,"keywords":["readUserInfo","initJFrame","initView","setVisible"],"description":"查看 LoginJFrame 构造方法中的调用"},
+    {"id":5,"category":"callees","question":"GameJFrame 的构造方法里调用了什么？","expected_type":"callees","expected_target":"GameJFrame","min_count":4,"keywords":["initJFrame","initJMenuBar","initData","initImage"],"description":"查看 GameJFrame 构造方法内部的调用"},
+    {"id":6,"category":"callees","question":"getCode 方法内部调用了哪些库函数？","expected_type":"callees","expected_target":"getCode","min_count":3,"keywords":["add","nextInt","size","get"],"description":"查看 getCode 内部的库函数调用"},
+    {"id":7,"category":"search","question":"搜索跟 action 相关的函数或方法","expected_type":"search","expected_target":"action","min_count":2,"keywords":["actionPerformed"],"description":"搜索名字中带 action 的方法"},
+    {"id":8,"category":"search","question":"有没有跟 mouse 相关的事件方法？","expected_type":"search","expected_target":"mouse","min_count":3,"keywords":["mouse"],"description":"搜索 mouse 相关的事件处理方法"},
+    {"id":9,"category":"detail","question":"getCode 这个方法是干什么的？能详细介绍一下吗？","expected_type":"detail","expected_target":"getCode","keywords":["验证码","code"],"description":"查询 getCode 的详情"},
+    {"id":10,"category":"detail","question":"GameJFrame 类的 initImage 方法的详细信息","expected_type":"detail","expected_target":"initImage","keywords":["initImage"],"description":"查看 initImage 方法的详细信息"},
+    {"id":11,"category":"impact","question":"如果修改 getCode 方法，会影响哪些调用方？","expected_type":"impact","expected_target":"getCode","min_count":2,"keywords":["LoginJFrame"],"description":"变更影响分析：getCode"},
+    {"id":12,"category":"impact","question":"修改 initImage 会影响哪些地方？","expected_type":"impact","expected_target":"initImage","min_count":1,"keywords":["GameJFrame"],"description":"变更影响分析：initImage"},
+    {"id":13,"category":"structure","question":"CodeUtil.java 文件里有什么类和方法？","expected_type":"structure","expected_target":"CodeUtil.java","min_count":1,"keywords":["CodeUtil","getCode"],"description":"查看 CodeUtil.java 的文件结构"},
+    {"id":14,"category":"structure","question":"GameJFrame.java 里有哪些方法？","expected_type":"structure","expected_target":"GameJFrame.java","min_count":5,"keywords":["initData","initImage","keyPressed","actionPerformed"],"description":"查看 GameJFrame.java 的文件结构"},
+    {"id":15,"category":"stats","question":"这个项目总共有多少个 Java 文件？","expected_type":"stats","expected_target":"","min_count":1,"keywords":["文件"],"description":"查询项目的 Java 文件数量"},
+    {"id":16,"category":"stats","question":"拼图游戏项目有多少个函数和类？","expected_type":"stats","expected_target":"","min_count":1,"keywords":["函数","类"],"description":"查询项目的函数和类数量"}
+  ]
+}

@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "code-guard"
+version = "0.1.0"
+description = "代码知识图谱 MCP Agent - 基于 Tree-sitter 的代码智能分析工具"
+requires-python = ">=3.10"
+dependencies = [
+    "tree-sitter>=0.26.0",
+    "tree-sitter-python>=0.25.0",
+    "tree-sitter-java>=0.23.0",
+    "tree-sitter-c>=0.24.0",
+    "mcp>=1.0.0,<2.0.0",
+    "openai>=1.0.0",
+    "python-dotenv>=1.0.0",
+]
+
+[project.optional-dependencies]
+cpp = ["tree-sitter-cpp>=0.23.0"]
+full = ["tree-sitter-cpp>=0.23.0"]
+
+[tool.setuptools.packages.find]
+where = ["src"]

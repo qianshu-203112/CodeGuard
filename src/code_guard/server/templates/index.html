@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+{% block title %}CodeGuard — 项目分析{% endblock %}
+{% block content %}
+
+<div class="card">
+  <h2>📦 项目分析</h2>
+  <form method="POST" action="/analyze" id="analyzeForm">
+    <label class="lbl" for="project">项目路径</label>
+    <div style="display:flex;gap:4px">
+      <div style="flex:1;display:flex;gap:4px;align-items:center;min-width:200px">
+        <input type="text" id="project" name="project" class="inp"
+               value="{{ project_path }}"
+               placeholder="例如: D:/Project/MyProject">
+        <button type="button" class="tbtn" onclick="pickFolder('project')"
+                title="选择文件夹" style="font-size:18px;line-height:1;padding:6px 10px">📂</button>
+      </div>
+      <button type="submit" class="btn" id="analyzeBtn">分析</button>
+    </div>
+  </form>
+</div>
+
+{% if project_error %}
+<div class="msg err">{{ project_error }}</div>
+{% endif %}
+
+{% if stats %}
+<div class="msg ok">✅ 项目分析完成</div>
+
+<div class="card">
+  <h2>📊 项目统计</h2>
+  <div class="stats">
+    <div class="stat"><span class="num">{{ stats.files }}</span><span class="lb">代码文件</span></div>
+    <div class="stat"><span class="num">{{ stats.functions }}</span><span class="lb">函数</span></div>
+    <div class="stat"><span class="num">{{ stats.classes }}</span><span class="lb">类</span></div>
+    <div class="stat"><span class="num">{{ stats.calls }}</span><span class="lb">调用关系</span></div>
+    <div class="stat"><span class="num">{{ stats.imports }}</span><span class="lb">Import</span></div>
+  </div>
+</div>
+
+{% if analysis %}
+<div class="card">
+  <h2>📦 模块依赖</h2>
+  <div class="stats">
+    <div class="stat"><span class="num">{{ analysis.stats.total_modules }}</span><span class="lb">模块数</span></div>
+    <div class="stat"><span class="num">{{ analysis.stats.total_dependencies }}</span><span class="lb">依赖数</span></div>
+    <div class="stat"><span class="num">{{ analysis.stats.circular_dep_count }}</span><span class="lb">循环依赖</span></div>
+    <div class="stat"><span class="num">{{ analysis.stats.orphan_count }}</span><span class="lb">孤立模块</span></div>
+  </div>
+
+  {% if analysis.core_modules %}
+  <h3>📌 核心模块（被依赖最多的 Top-5）</h3>
+  <ul class="lst">
+    {% for m in analysis.core_modules[:5] %}
+    {% if m.depended_by_count > 0 %}
+    <li><span class="nm">{{ m.name }}/</span><span class="vl">被 {{ m.depended_by_count }} 个模块依赖</span></li>
+    {% endif %}
+    {% endfor %}
+  </ul>
+  {% endif %}
+
+  {% if analysis.circular_deps %}
+  <h3>⚠️ 循环依赖（{{ analysis.circular_deps|length }} 个）</h3>
+  <ul class="lst">
+    {% for cycle in analysis.circular_deps %}
+    <li><span class="nm">{{ " → ".join(cycle) }}</span></li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+</div>
+{% endif %}
+
+{% endif %}
+
+{% if cached_viz %}
+<div class="card">
+  <h2>🖼️ 已生成的可视化图</h2>
+  <ul class="lst" id="indexFileList">
+    {% for v in cached_viz %}
+    <li data-file="{{ v }}">
+      <span class="nm">{{ v }}</span>
+      <div>
+        <a href="/open-viz/{{ v }}" target="_blank" class="tbtn" style="padding:2px 10px;font-size:12px">打开</a>
+        <button class="tbtn" style="padding:2px 10px;font-size:12px;color:#f85149;border-color:rgba(248,81,73,.3)"
+                onclick="deleteFile(this,'{{ v }}')">删除</button>
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+{% if project_ok %}
+<div style="text-align:center;margin-top:16px">
+  <a href="/viz" class="tbtn">📊 生成可视化图 →</a>
+  <a href="/query" class="tbtn" style="margin-left:8px">💬 问代码问题 →</a>
+</div>
+{% endif %}
+
+<script>
+document.getElementById('analyzeForm').addEventListener('submit', function() {
+  document.getElementById('analyzeBtn').disabled = true;
+  document.getElementById('analyzeBtn').innerHTML = '<span class="spinner"></span> 分析中...';
+});
+
+function pickFolder(inputId) {
+  var msg = document.getElementById('folderMsg');
+  if (!msg) {
+    msg = document.createElement('div');
+    msg.id = 'folderMsg';
+    msg.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#161b22;border:1px solid #30363d;border-radius:8px;padding:20px 30px;font-size:14px;color:#c9d1d9;z-index:9999;display:none';
+    msg.innerHTML = '⏳ 正在打开文件夹选择器...';
+    document.body.appendChild(msg);
+  }
+  msg.style.display = 'block';
+  var xhr = new XMLHttpRequest();
+  xhr.open('GET', '/pick-folder', true);
+  xhr.timeout = 180000;
+  xhr.onload = function() {
+    msg.style.display = 'none';
+    try {
+      var data = JSON.parse(xhr.responseText);
+      if (data.path) { document.getElementById(inputId).value = data.path; }
+    } catch(e) {}
+  };
+  xhr.onerror = function() { msg.style.display = 'none'; };
+  xhr.ontimeout = function() { msg.style.display = 'none'; };
+  xhr.send();
+}
+
+async function pickFolder(inputId) {
+  var input = document.getElementById(inputId || 'project');
+  try {
+    const res = await fetch('/pick-folder');
+    if (!res.ok) return; // 服务器错误，安静退出
+    const data = await res.json();
+    if (data.path) {
+      input.value = data.path;
+      return;
+    }
+    // data.path 为空 = 用户取消或没选，安静退出
+  } catch (e) {
+    // 网络错误，安静退出
+  }
+}
+
+async function deleteFile(btn, name) {
+  var project = document.getElementById('project').value.trim();
+  if (!project) { alert('请先输入项目路径'); return; }
+  if (!confirm('确定要删除「' + name + '」吗？')) return;
+  try {
+    const form = new FormData();
+    form.append('project', project);
+    form.append('file', name);
+    const res = await fetch('/viz/delete', { method: 'POST', body: form });
+    const data = await res.json();
+    if (data.success) {
+      const el = btn.closest('li');
+      if (el) el.remove();
+    } else {
+      alert('删除失败: ' + data.error);
+    }
+  } catch (e) {
+    alert('删除请求失败: ' + e.message);
+  }
+}
+</script>
+{% endblock %}

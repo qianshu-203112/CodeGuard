@@ -1,0 +1,179 @@
+{% extends "base.html" %}
+{% block title %}CodeGuard — 代码问答{% endblock %}
+{% block content %}
+
+<div class="card">
+  <h2>Multi-Agent 代码问答</h2>
+
+  <div style="margin-bottom:16px">
+    <label class="lbl">项目路径</label>
+    <div style="display:flex;gap:8px;align-items:center">
+      <div style="flex:1;display:flex;gap:4px;align-items:center;min-width:200px">
+        <input type="text" id="queryProject" class="inp"
+               value="{{ project_path }}"
+               placeholder="例如: D:/Project/MyProject">
+        <button class="tbtn" onclick="pickFolder('queryProject')"
+                title="选择文件夹" style="font-size:18px;line-height:1;padding:6px 10px">📂</button>
+      </div>
+    </div>
+  </div>
+
+  <label class="lbl" for="question">输入你的问题</label>
+  <div style="display:flex;gap:8px">
+    <input type="text" id="question" name="question" class="inp"
+           placeholder="例如: 这个项目用到了哪些外部工具？"
+           onkeydown="if(event.key==='Enter')ask()">
+    <button class="btn" id="askBtn" onclick="ask()" style="white-space:nowrap">提问</button>
+  </div>
+</div>
+
+<div id="processArea"></div>
+<div id="answerArea"></div>
+
+<div class="card">
+  <h2>示例问题</h2>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:13px">
+    <div style="padding:8px 12px;background:#0d1117;border:1px solid #30363d;border-radius:6px;cursor:pointer"
+         onclick="fillAndAsk('这个项目的agent用到了哪些工具？')">
+      <span style="color:#c9d1d9">用到了哪些外部工具？</span>
+    </div>
+    <div style="padding:8px 12px;background:#0d1117;border:1px solid #30363d;border-radius:6px;cursor:pointer"
+         onclick="fillAndAsk('项目中总共有多少个文件和函数？')">
+      <span style="color:#c9d1d9">项目统计信息</span>
+    </div>
+  </div>
+</div>
+
+<script>
+function getProject() {
+  return document.getElementById('queryProject').value.trim();
+}
+
+function pickFolder(inputId) {
+  var msg = document.getElementById('folderMsg');
+  if (!msg) {
+    msg = document.createElement('div');
+    msg.id = 'folderMsg';
+    msg.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#161b22;border:1px solid #30363d;border-radius:8px;padding:20px 30px;font-size:14px;color:#c9d1d9;z-index:9999;display:none';
+    msg.innerHTML = '⏳ 正在打开文件夹选择器...';
+    document.body.appendChild(msg);
+  }
+  msg.style.display = 'block';
+  var xhr = new XMLHttpRequest();
+  xhr.open('GET', '/pick-folder', true);
+  xhr.timeout = 180000;
+  xhr.onload = function() {
+    msg.style.display = 'none';
+    try {
+      var data = JSON.parse(xhr.responseText);
+      if (data.path) { document.getElementById(inputId).value = data.path; }
+    } catch(e) {}
+  };
+  xhr.onerror = function() { msg.style.display = 'none'; };
+  xhr.ontimeout = function() { msg.style.display = 'none'; };
+  xhr.send();
+}
+
+function ask() {
+  var project = getProject();
+  if (!project) { showAnswer('<div class="msg err">请先输入项目路径</div>'); return; }
+
+  var q = document.getElementById('question').value.trim();
+  if (!q) return;
+
+  var processArea = document.getElementById('processArea');
+  var answerArea = document.getElementById('answerArea');
+  var btn = document.getElementById('askBtn');
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> 思考中...';
+  processArea.innerHTML = '<div class="msg info" id="planMsg">📋 正在规划...</div>';
+  answerArea.innerHTML = '';
+
+  // 用 EventSource (SSE) 接收流式事件
+  var url = '/query-stream?project=' + encodeURIComponent(project) + '&question=' + encodeURIComponent(q);
+  var source = new EventSource(url);
+
+  var stepsHtml = '';
+
+  source.addEventListener('plan', function(e) {
+    // 显示规划结果
+    var msg = document.getElementById('planMsg');
+    if (msg) msg.innerHTML = '📋 规划完成';
+    processArea.innerHTML = '<div class="card"><h2>执行步骤</h2><div id="stepList"></div></div>';
+  });
+
+  source.addEventListener('step_start', function(e) {
+    var data = JSON.parse(e.data);
+    var stepList = document.getElementById('stepList');
+    var div = document.createElement('div');
+    div.id = 'step_' + data.step;
+    div.style.cssText = 'background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:10px 14px;margin-bottom:8px';
+    div.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center">' +
+      '<span style="color:#58a6ff;font-weight:600">⏳ 步骤' + data.step + ': ' + escapeHtml(data.tool) + '</span>' +
+      '<span style="font-size:11px;color:#8b949e">' + escapeHtml(JSON.stringify(data.args)) + '</span></div>' +
+      '<div style="margin-top:4px;font-size:12px;color:#8b949e">执行中...</div>';
+    stepList.appendChild(div);
+  });
+
+  source.addEventListener('step_done', function(e) {
+    var data = JSON.parse(e.data);
+    var stepEl = document.getElementById('step_' + data.step);
+    if (stepEl) {
+      stepEl.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center">' +
+        '<span style="color:#3fb950;font-weight:600">✅ 步骤' + data.step + ': ' + escapeHtml(data.tool) + '</span>' +
+        '<span style="font-size:11px;color:#8b949e">' + escapeHtml(JSON.stringify(data.args)) + '</span></div>' +
+        '<div style="margin-top:4px;font-size:12px;color:#c9d1d9">' + escapeHtml(String(data.result).slice(0, 300)) + '</div>';
+    }
+  });
+
+  source.addEventListener('synthesize', function(e) {
+    var stepList = document.getElementById('stepList');
+    if (stepList) {
+      var div = document.createElement('div');
+      div.id = 'synthMsg';
+      div.style.cssText = 'background:#0d1117;border:1px solid #58a6ff;border-radius:6px;padding:10px 14px;margin-bottom:8px;color:#58a6ff';
+      div.innerHTML = '🧠 正在合成最终回答...';
+      stepList.appendChild(div);
+    }
+  });
+
+  source.addEventListener('answer', function(e) {
+    var data = JSON.parse(e.data);
+    answerArea.innerHTML = '<div class="card"><h2>回答</h2><pre style="white-space:pre-wrap">' + escapeHtml(data.text) + '</pre></div>';
+  });
+
+  source.addEventListener('done', function(e) {
+    source.close();
+    btn.disabled = false;
+    btn.innerHTML = '提问';
+    var synthMsg = document.getElementById('synthMsg');
+    if (synthMsg) synthMsg.innerHTML = '✅ 回答完成';
+  });
+
+  source.addEventListener('error', function(e) {
+    source.close();
+    btn.disabled = false;
+    btn.innerHTML = '提问';
+    if (processArea.innerHTML.indexOf('执行步骤') < 0) {
+      processArea.innerHTML = '<div class="msg err">连接失败，请重试</div>';
+    }
+  });
+}
+
+function fillAndAsk(text) {
+  document.getElementById('question').value = text;
+  ask();
+}
+
+function showAnswer(html) {
+  document.getElementById('answerArea').innerHTML = html;
+}
+
+function escapeHtml(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+          .replace(/'/g,'&#39;').replace(/"/g,'&quot;');
+}
+</script>
+{% endblock %}

@@ -1,0 +1,22 @@
+{
+  "name": "贪吃蛇(C++)测试集",
+  "description": "验证 CodeGuard 对 C++ 单文件项目的理解能力。部分题目引用 main/reset，用于暴露 C 解析器对 C++ 语法的 ERROR 吞函数问题",
+  "target_hint": "C:/Users/卢鹏/Desktop/all in/贪吃蛇",
+  "questions": [
+    {"id":1,"category":"callers","question":"谁调用了 XSleep 函数？","expected_type":"callers","expected_target":"XSleep","min_count":1,"keywords":["eatplay"],"description":"XSleep 被 eatplay 调用，应命中"},
+    {"id":2,"category":"callers","question":"paintSnake 被哪些函数调用了？","expected_type":"callers","expected_target":"paintSnake","min_count":1,"keywords":["main"],"description":"paintSnake 应被 main 调用；main 缺失则失败"},
+    {"id":3,"category":"callers","question":"play 函数被谁调用了？","expected_type":"callers","expected_target":"play","min_count":1,"keywords":["main"],"description":"play 应被 main 调用；main 缺失则失败"},
+    {"id":4,"category":"callees","question":"XSleep 函数内部调用了哪些库函数？","expected_type":"callees","expected_target":"XSleep","min_count":2,"keywords":["CreateEvent","CreateThread"],"description":"XSleep 内部调用 CreateEvent/CreateThread"},
+    {"id":5,"category":"callees","question":"changeDirection 内部调用了什么？","expected_type":"callees","expected_target":"changeDirection","min_count":2,"keywords":["kbhit","getch"],"description":"changeDirection 内部调用 _kbhit/_getch"},
+    {"id":6,"category":"callees","question":"main 函数里调用了哪些函数？","expected_type":"callees","expected_target":"main","min_count":5,"keywords":["paintGrid","paintSnake"],"description":"main 内部调用；main 缺失则失败"},
+    {"id":7,"category":"search","question":"搜索跟 paint 相关的函数","expected_type":"search","expected_target":"paint","min_count":3,"keywords":["paintGrid","paintSnake"],"description":"搜索 paint 相关函数，应命中3个"},
+    {"id":8,"category":"search","question":"有没有跟 play 相关的函数？","expected_type":"search","expected_target":"play","min_count":3,"keywords":["play","eatplay"],"description":"搜索 play 相关函数，应命中 play/eatplay/kunplay"},
+    {"id":9,"category":"detail","question":"paintSnake 这个函数是干什么的？能详细介绍一下吗？","expected_type":"detail","expected_target":"paintSnake","keywords":["paintSnake"],"description":"paintSnake 详情"},
+    {"id":10,"category":"detail","question":"reset 函数是干什么的？","expected_type":"detail","expected_target":"reset","keywords":["reset"],"description":"reset 详情；reset 缺失则失败"},
+    {"id":11,"category":"impact","question":"如果修改 XSleep 函数，会影响哪些调用方？","expected_type":"impact","expected_target":"XSleep","min_count":1,"keywords":["eatplay"],"description":"XSleep 变更影响，应波及 eatplay"},
+    {"id":12,"category":"impact","question":"修改 paintFood 会影响哪些地方？","expected_type":"impact","expected_target":"paintFood","min_count":1,"keywords":["main"],"description":"paintFood 变更影响；caller main 缺失则失败"},
+    {"id":13,"category":"stats","question":"贪吃蛇项目总共有多少个函数？","expected_type":"stats","expected_target":"","min_count":1,"keywords":["函数"],"description":"统计函数数量"},
+    {"id":14,"category":"stats","question":"这个项目有多少个结构体？","expected_type":"stats","expected_target":"","min_count":1,"keywords":["结构体"],"description":"统计结构体/类数量"},
+    {"id":15,"category":"detail","question":"main 函数是干什么的？能详细介绍一下吗？","expected_type":"detail","expected_target":"main","keywords":["main"],"description":"main 详情；main 缺失则失败"}
+  ]
+}

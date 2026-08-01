@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: 安装依赖
+        run: |
+          pip install -e ".[full]"
+
+      - name: 冒烟测试 — 解析 CodeGuard 自身并建图、查询
+        run: |
+          python -m code_guard.cli.main parse . --db /tmp/smoke.db
+          # 验证图可用：查询一个函数（stats/search 用 --db 的子命令）
+          python -m code_guard.cli.main search get_callers --db /tmp/smoke.db
+          python -m code_guard.cli.main query get_callers --db /tmp/smoke.db
+
+      - name: 评测 — 用自身测试集（必须全部通过）
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_BASE_URL: ${{ secrets.OPENAI_BASE_URL }}
+        run: |
+          # 注意：--test-set 相对路径基于 eval/ 目录，用 tests/xxx.json
+          python -m code_guard.eval.runner . \
+            --test-set tests/codeguard.json \
+            --report /tmp/eval_report.json
+          # 断言：通过数 == 总数（报告 JSON 里有 passed/total）
+          python - <<'EOF'
+          import json
+          r = json.load(open("/tmp/eval_report.json"))
+          summary = r["summary"]
+          print(f"总分: {summary['avg_score']}  通过: {summary['passed']}/{summary['total']}")
+          assert summary["passed"] == summary["total"], \
+              f"评测未全通过: {summary['passed']}/{summary['total']}"
+          EOF
+
+      - name: 清理
+        run: rm -f /tmp/smoke.db /tmp/eval_report.json
