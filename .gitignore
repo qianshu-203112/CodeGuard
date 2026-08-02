@@ -14,6 +14,9 @@ fix_viz.py
 # 生成的可视化 HTML（按需生成，不提交）
 *_graph.html
 
+# 运行时生成的数据（增量图数据库 graph.db、可视化缓存等）
+.codeguard/
+
 # Python
 __pycache__/
 *.pyc

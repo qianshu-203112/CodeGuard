@@ -1,0 +1,37 @@
+#!/bin/sh
+# CodeGuard 增量同步 — post-checkout 钩子样例
+# 每次 git checkout / 切分支后自动把代码变更同步进图数据库。
+#
+# 安装：
+#   cp scripts/hooks/post-checkout <项目>/.git/hooks/post-checkout
+#   chmod +x <项目>/.git/hooks/post-checkout
+#
+# 前提：先全量建一次图（见 post-commit 注释）。
+# 行为：只处理"切分支"（第三个参数 flag=1）；git checkout <文件> 恢复单个
+#       文件（flag=0）和首次 clone 后的自动 checkout 也会触发本钩子，
+#       这里按 git 惯例用 flag 判断跳过，避免无谓重扫。
+
+ROOT="$(git rev-parse --show-toplevel)" || exit 0
+cd "$ROOT" || exit 0
+
+# post-checkout 参数：<old> <new> <flag>，flag=1 是切分支，0 是 checkout 文件
+if [ "$3" != "1" ]; then
+  exit 0
+fi
+# 首次 clone 后 git 会自动 checkout（old 全零），此时图多半还没建，直接跳过
+if [ "$1" = "0000000000000000000000000000000000000000" ]; then
+  exit 0
+fi
+
+PY="python"
+for p in ".venv/Scripts/python" ".venv/bin/python" "venv/Scripts/python" "venv/bin/python"; do
+  if [ -x "$ROOT/$p" ]; then PY="$ROOT/$p"; break; fi
+done
+
+DB="$ROOT/.codeguard/graph.db"
+if [ ! -f "$DB" ]; then
+  exit 0
+fi
+
+"$PY" -m code_guard.cli.main sync "$ROOT" --db "$DB" >/dev/null 2>&1 \
+  || echo "[codeguard] 增量同步失败，请检查 code-guard 是否已安装"

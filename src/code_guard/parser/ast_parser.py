@@ -364,6 +364,85 @@ def parse_project(project_path: str) -> Dict[str, ParseResult]:
     return results
 
 
+# 各语言解析器注册时同步更新这两个集合（list_source_files 过滤候选文件，
+# parse_one_file 分发解析）。eval_baseline.py 有独立的一份 SOURCE_EXTS，改这里时记得同步。
+_SOURCE_EXTS = (
+    ".py", ".java", ".js", ".jsx", ".ts", ".tsx", ".vue",
+    ".go", ".c", ".h", ".cpp", ".hpp", ".cc", ".cxx",
+    ".rs", ".cs",
+)
+
+# 解析时跳过的目录（虚拟环境 / 版本控制 / 编译产物 / 工具链）
+_SKIP_DIRS = frozenset((
+    "venv", "node_modules", "__pycache__", ".git",
+    ".idea", "dist", "build", "egg-info", ".mypy_cache",
+    ".pytest_cache", ".tox", "env", "envs", "target",
+    "Dev-C++", "Dev-C++-Easyx", "MinGW64", "MinGW",
+    "coverage", ".nyc_output", ".next",
+))
+
+
+def list_source_files(project_path: str) -> List[str]:
+    """递归收集项目内所有受支持语言的源码文件绝对路径（跳过 _SKIP_DIRS）。
+
+    供全量解析（parse_project_multilang）和增量同步（sync）共用，保证两者
+    扫描的文件集合一致。
+    """
+    files = []
+    for root, dirs, names in os.walk(project_path):
+        dirs[:] = [d for d in dirs if d not in _SKIP_DIRS]
+        for f in sorted(names):
+            if f.endswith(_SOURCE_EXTS):
+                files.append(os.path.join(root, f))
+    return files
+
+
+def parse_one_file(file_path: str) -> Optional[ParseResult]:
+    """按扩展名分发到对应语言解析器，返回 ParseResult；不支持的扩展名返回 None。
+
+    从 parse_project_multilang 抽出，供全量解析和增量同步复用，保证单文件
+    解析路径一致。
+    """
+    f = os.path.basename(file_path)
+    if f.endswith(".py"):
+        return parse_file(file_path)
+    if f.endswith(".java"):
+        from code_guard.parser.java_parser import parse_java_file
+        return parse_java_file(file_path)
+    if f.endswith((".js", ".jsx", ".ts", ".tsx", ".vue")):
+        from code_guard.parser.js_parser import parse_js_file
+        return parse_js_file(file_path)
+    if f.endswith(".go"):
+        from code_guard.parser.go_parser import parse_go_file
+        return parse_go_file(file_path)
+    if f.endswith((".c", ".h")):
+        from code_guard.parser.c_parser import parse_c_file
+        return parse_c_file(file_path)
+    if f.endswith((".cpp", ".hpp", ".cc", ".cxx")):
+        try:
+            from code_guard.parser.cpp_parser import parse_cpp_file
+            return parse_cpp_file(file_path)
+        except ImportError:
+            # 没装 C++ 解析器时用 C 解析器兜底
+            from code_guard.parser.c_parser import parse_c_file
+            return parse_c_file(file_path)
+    if f.endswith(".rs"):
+        try:
+            from code_guard.parser.rust_parser import parse_rs_file
+            return parse_rs_file(file_path)
+        except ImportError:
+            # 没装 Rust 解析器时跳过（文件不进入解析结果）
+            return None
+    if f.endswith(".cs"):
+        try:
+            from code_guard.parser.cs_parser import parse_cs_file
+            return parse_cs_file(file_path)
+        except ImportError:
+            # 没装 C# 解析器时跳过
+            return None
+    return None
+
+
 def parse_project_multilang(project_path: str) -> Dict[str, ParseResult]:
     """
     多语言项目解析 — 自动识别 .py / .java / .c / .h / .cpp / .go 等文件。
@@ -371,44 +450,13 @@ def parse_project_multilang(project_path: str) -> Dict[str, ParseResult]:
     各语言的解析器在各自的模块中，入口统一在这里调度。
     """
     results = {}
-    for root, dirs, files in os.walk(project_path):
-        dirs[:] = [d for d in dirs if d not in (
-            "venv", "node_modules", "__pycache__", ".git",
-            ".idea", "dist", "build", "egg-info", ".mypy_cache",
-            ".pytest_cache", ".tox", "env", "envs", "target",
-            "Dev-C++", "Dev-C++-Easyx", "MinGW64", "MinGW",
-            "coverage", ".nyc_output", ".next",
-        )]
-        for f in sorted(files):
-            file_path = os.path.join(root, f)
-            try:
-                if f.endswith(".py"):
-                    result = parse_file(file_path)
-                elif f.endswith(".java"):
-                    from code_guard.parser.java_parser import parse_java_file
-                    result = parse_java_file(file_path)
-                elif f.endswith((".js", ".jsx", ".ts", ".tsx", ".vue")):
-                    from code_guard.parser.js_parser import parse_js_file
-                    result = parse_js_file(file_path)
-                elif f.endswith(".go"):
-                    from code_guard.parser.go_parser import parse_go_file
-                    result = parse_go_file(file_path)
-                elif f.endswith((".c", ".h")):
-                    from code_guard.parser.c_parser import parse_c_file
-                    result = parse_c_file(file_path)
-                elif f.endswith((".cpp", ".hpp", ".cc", ".cxx")):
-                    try:
-                        from code_guard.parser.cpp_parser import parse_cpp_file
-                        result = parse_cpp_file(file_path)
-                    except ImportError:
-                        # 没装 C++ 解析器时用 C 解析器兜底
-                        from code_guard.parser.c_parser import parse_c_file
-                        result = parse_c_file(file_path)
-                else:
-                    continue
+    for file_path in list_source_files(project_path):
+        try:
+            result = parse_one_file(file_path)
+            if result is not None:
                 results[file_path] = result
-            except Exception as e:
-                print(f"  ⚠️  跳过 {file_path}: {e}")
+        except Exception as e:
+            print(f"  ⚠️  跳过 {file_path}: {e}")
     return results
 
 

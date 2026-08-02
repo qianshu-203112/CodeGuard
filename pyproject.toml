@@ -19,7 +19,13 @@ dependencies = [
 
 [project.optional-dependencies]
 cpp = ["tree-sitter-cpp>=0.23.0"]
-full = ["tree-sitter-cpp>=0.23.0"]
+rust = ["tree-sitter-rust>=0.23.0"]
+csharp = ["tree-sitter-c-sharp>=0.21.0"]
+full = [
+    "tree-sitter-cpp>=0.23.0",
+    "tree-sitter-rust>=0.23.0",
+    "tree-sitter-c-sharp>=0.21.0",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]

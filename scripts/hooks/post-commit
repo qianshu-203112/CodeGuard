@@ -1,0 +1,29 @@
+#!/bin/sh
+# CodeGuard 增量同步 — post-commit 钩子样例
+# 每次 git commit 后自动把代码变更同步进图数据库（只重解析变更文件）。
+#
+# 安装（Windows/macOS/Linux 通用）：
+#   cp scripts/hooks/post-commit <项目>/.git/hooks/post-commit
+#   chmod +x <项目>/.git/hooks/post-commit
+#
+# 前提：先全量建一次图：
+#   python -m code_guard.cli.main parse <项目> --db <项目>/.codeguard/graph.db
+# 建议把 <项目>/.codeguard/graph.db 加入 .gitignore（同步命令会重写它）。
+
+ROOT="$(git rev-parse --show-toplevel)" || exit 0
+cd "$ROOT" || exit 0
+
+# 优先用项目自带 venv 的 python，否则用系统 python
+PY="python"
+for p in ".venv/Scripts/python" ".venv/bin/python" "venv/Scripts/python" "venv/bin/python"; do
+  if [ -x "$ROOT/$p" ]; then PY="$ROOT/$p"; break; fi
+done
+
+DB="$ROOT/.codeguard/graph.db"
+if [ ! -f "$DB" ]; then
+  # 图还没建过：静默跳过（首次用 parse 全量建）
+  exit 0
+fi
+
+"$PY" -m code_guard.cli.main sync "$ROOT" --db "$DB" >/dev/null 2>&1 \
+  || echo "[codeguard] 增量同步失败，请检查 code-guard 是否已安装"

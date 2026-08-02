@@ -19,7 +19,7 @@ _src = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 if _src not in sys.path:
     sys.path.insert(0, _src)
 
-from code_guard.parser.ast_parser import parse_project, parse_project_multilang, parse_file
+from code_guard.parser.ast_parser import parse_project_multilang, parse_one_file
 from code_guard.graph.code_graph import CodeGraph
 from code_guard.analyzer import ModuleDependencyAnalyzer
 from code_guard.viz import generate_html
@@ -30,19 +30,28 @@ def cmd_parse(args):
     project_path = args.path
 
     if not os.path.isdir(project_path):
-        # 可能是单个文件
-        result = parse_file(project_path)
-        results = {project_path: result}
+        # 可能是单个文件（多语言，用 parse_one_file 分发）
+        result = parse_one_file(project_path)
+        results = {project_path: result} if result else {}
     else:
         print(f"🔍 正在解析 {project_path} ...")
-        results = parse_project(project_path)
+        results = parse_project_multilang(project_path)
 
     print(f"✅ 解析完成: {len(results)} 个文件")
 
-    # 建图
+    # 建图（先确保目标目录存在，sqlite 不会自动建目录）
     graph_path = args.output or ":memory:"
+    if graph_path != ":memory:":
+        db_dir = os.path.dirname(graph_path)
+        if db_dir:
+            os.makedirs(db_dir, exist_ok=True)
     graph = CodeGraph(graph_path)
     graph.load_project(results)
+
+    # 记录内容哈希：后续 sync 才能识别"未变文件"直接跳过（只记成功解析的文件）
+    if graph_path != ":memory:" and os.path.isdir(project_path):
+        from code_guard.sync import record_all_hashes
+        record_all_hashes(graph, project_path, only_files=set(results))
 
     stats = graph.get_stats()
     print(f"\n📊 图统计:")
@@ -143,6 +152,33 @@ def cmd_search(args):
     graph.close()
 
 
+def cmd_sync(args):
+    """增量同步项目到已有图数据库（只重解析变更文件）"""
+    from code_guard.sync import sync_project
+
+    project_path = args.path
+    db_path = args.db or os.path.join(project_path, ".codeguard", "graph.db")
+    db_dir = os.path.dirname(db_path)
+    if db_dir:
+        os.makedirs(db_dir, exist_ok=True)
+
+    print(f"🔍 增量同步 {project_path} -> {db_path}")
+    stats = sync_project(project_path, db_path)
+    print(f"\n✅ 同步完成: 新增 {stats['parsed']} / 变更 {stats['updated']} / "
+          f"删除 {stats['removed']} / 未变 {stats['unchanged']} "
+          f"(磁盘源码文件共 {stats['total_files']})")
+
+    graph = CodeGraph(db_path)
+    s = graph.get_stats()
+    print(f"\n📊 图统计:")
+    print(f"  文件: {s['files']}")
+    print(f"  函数: {s['functions']}")
+    print(f"  类: {s['classes']}")
+    print(f"  调用边: {s['calls']}")
+    print(f"  Import: {s['imports']}")
+    graph.close()
+
+
 def cmd_stats(args):
     """显示统计"""
     project_path = args.path
@@ -166,6 +202,32 @@ def cmd_stats(args):
     print(f"  Import:   {stats['imports']}")
 
     graph.close()
+
+
+def cmd_diff(args):
+    """版本图谱对比"""
+    from code_guard.diff import VersionDiffer
+
+    try:
+        differ = VersionDiffer(args.path)
+    except ValueError as e:
+        print(f"❌ {e}")
+        return
+    print(f"🔍 版本对比 {args.base} → {args.head} ({args.path})")
+    try:
+        diff = differ.compare(args.base, args.head)
+    except Exception as e:
+        print(f"❌ 版本对比失败: {e}")
+        return
+
+    if args.json:
+        print(json.dumps(diff, ensure_ascii=False, indent=2))
+    else:
+        print(differ.render_text(diff))
+
+    if args.html:
+        from code_guard.viz import generate_diff_html
+        generate_diff_html(diff, args.html)
 
 
 def cmd_modules(args):
@@ -223,6 +285,20 @@ def main():
     p = subparsers.add_parser("stats", help="项目统计")
     p.add_argument("path", help="项目路径")
 
+    # sync
+    p = subparsers.add_parser("sync", help="增量同步项目到图数据库（只重解析变更文件）")
+    p.add_argument("path", help="项目路径")
+    p.add_argument("--db", help="图数据库路径（默认 <项目路径>/.codeguard/graph.db）")
+    p.add_argument("-o", dest="db", help="--db 的别名")
+
+    # diff
+    p = subparsers.add_parser("diff", help="版本图谱对比（两个 git 版本差分）")
+    p.add_argument("path", help="项目路径（需是 git 仓库）")
+    p.add_argument("--base", required=True, help="基准版本 git ref")
+    p.add_argument("--head", default=".", help="对比版本 git ref（默认 . = 当前工作树）")
+    p.add_argument("--json", action="store_true", help="输出原始 JSON")
+    p.add_argument("--html", help="生成 diff 报告 HTML 到指定路径")
+
     # modules
     p = subparsers.add_parser("modules", help="模块依赖分析")
     p.add_argument("path", help="项目路径")
@@ -263,6 +339,10 @@ def main():
         cmd_search(args)
     elif args.command == "stats":
         cmd_stats(args)
+    elif args.command == "sync":
+        cmd_sync(args)
+    elif args.command == "diff":
+        cmd_diff(args)
     elif args.command == "modules":
         cmd_modules(args)
     elif args.command == "viz":

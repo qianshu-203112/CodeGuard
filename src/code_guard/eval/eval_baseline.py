@@ -19,7 +19,7 @@ from code_guard.eval.runner import (load_test_set, EvalQuestion, ScoreResult,
                                     _build_report)
 
 
-SOURCE_EXTS = (".py", ".java", ".js", ".ts", ".go", ".cpp", ".c", ".h", ".hpp", ".cs", ".rb")
+SOURCE_EXTS = (".py", ".java", ".js", ".ts", ".go", ".cpp", ".c", ".h", ".hpp", ".cs", ".rb", ".rs")
 MAX_FILES = 6
 MAX_CHARS = 40000  # 上下文预算（约 40k 字符），防止超 token
 

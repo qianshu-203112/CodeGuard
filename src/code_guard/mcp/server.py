@@ -258,6 +258,25 @@ def analyze_modules() -> str:
 
 
 @mcp.tool()
+def diff_versions(base_ref: str, head_ref: str = ".") -> str:
+    """版本图谱对比：两个 git 版本之间的代码差异（文件/函数/类/调用/影响）。
+
+    Args:
+        base_ref: 基准版本 git ref（如 HEAD~1、某个 commit、tag）
+        head_ref: 对比版本 git ref（默认 "." = 当前工作树）
+    """
+    try:
+        from code_guard.diff import VersionDiffer
+        differ = VersionDiffer(_project_path)
+        diff = differ.compare(base_ref, head_ref)
+        return differ.render_text(diff)
+    except ValueError as e:
+        return f"❌ {e}"
+    except Exception as e:
+        return f"❌ 版本对比失败: {e}"
+
+
+@mcp.tool()
 def visualize(output_path: str = "") -> str:
     """生成代码图谱可视化 HTML 文件（用浏览器打开可交互查看）。
 

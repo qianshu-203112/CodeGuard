@@ -2,7 +2,7 @@
 
 > 代码知识图谱 + 多 Agent 协作 + 自然语言问答 + 语义搜索
 
-CodeGuard 是一个基于 **Tree-sitter AST 解析 + 图数据库 + LLM 推理**的代码分析工具。它能解析 Python/Java/JS/TS/C/C++ 项目，构建函数调用图、类继承图、模块依赖图，然后通过自然语言问答来分析代码。
+CodeGuard 是一个基于 **Tree-sitter AST 解析 + 图数据库 + LLM 推理**的代码分析工具。它能解析 Python/Java/JS/TS/Go/C/C++/Rust/C# 项目，构建函数调用图、类继承图、模块依赖图，然后通过自然语言问答来分析代码。
 
 ---
 
@@ -21,7 +21,18 @@ CodeGuard 是一个基于 **Tree-sitter AST 解析 + 图数据库 + LLM 推理**
 - **Planner**：LLM 分析问题 → 拆解工具调用步骤
 - **Executor**：依次执行工具，收集结果
 - **Synthesizer**：基于工具结果合成最终回答
+- **Reflect 自检回炉**：首次回答"数据不足/被截断/无法确定"时，规则式补一轮查询再合成（有硬上限，不会死循环）
 - 支持 SSE 流式 Web 问答
+
+### 🔀 版本图谱对比
+- `diff` 两个 git 版本：文件/函数/类 新增/删除/修改 + 调用关系变化 + 变更影响分析
+- 输出文本报告、JSON、独立 HTML 报告页（离线可打开）
+- 自动用 `git worktree` 检出两版本分别建图，无需改任何解析器
+
+### 🔄 增量同步（Git Hook）
+- `sync` 只重解析变更文件合并进已有图，不用全量重扫
+- 用文件内容 SHA1 判断变更（不用 mtime，切分支不会误判）
+- 内置 `scripts/hooks/post-commit`、`post-checkout` 样例，commit/切分支后自动同步
 
 ### 🔎 语义搜索
 - Chroma + 通义千问 text-embedding-v3
@@ -38,8 +49,13 @@ CodeGuard 是一个基于 **Tree-sitter AST 解析 + 图数据库 + LLM 推理**
 | Python | Tree-sitter Python | ✅ |
 | Java | Tree-sitter Java | ✅ |
 | JavaScript/TS/Vue | Tree-sitter JS | ✅ |
+| Go | Tree-sitter Go | ✅ |
 | C | Tree-sitter C | ✅ |
 | C++ | Tree-sitter C++（无解析器时降级 C） | ✅ |
+| Rust | Tree-sitter Rust | ✅ |
+| C# | Tree-sitter C# | ✅ |
+
+> 解析器按扩展名自动分发，缺少某个语言包时仅跳过该语言文件（不报错）。装全量：`pip install -e ".[full]"`。
 
 ---
 
@@ -47,21 +63,29 @@ CodeGuard 是一个基于 **Tree-sitter AST 解析 + 图数据库 + LLM 推理**
 
 ```bash
 # 安装
-pip install -r requirements.txt
+pip install -e ".[full]"          # 全量（含 C++/Rust/C# 解析器）
+# 或最小安装: pip install -r requirements.txt
 
-# 解析项目并建图
-python -m code_guard.cli.main parse D:/Project/MyProject
+# 解析项目并建图（建在 <项目>/.codeguard/graph.db）
+python -m code_guard.cli.main parse D:/Project/MyProject --db D:/Project/MyProject/.codeguard/graph.db
 
 # 查询函数调用者
-python -m code_guard.cli.main query run_code --db code_graph.db
+python -m code_guard.cli.main query run_code --db D:/Project/MyProject/.codeguard/graph.db
 
 # 变更影响分析
-python -m code_guard.cli.main impact get_llm_client --db code_graph.db
+python -m code_guard.cli.main impact get_llm_client --db D:/Project/MyProject/.codeguard/graph.db
+
+# 增量同步（改代码后只重解析变更文件，可配 Git Hook 自动跑）
+python -m code_guard.cli.main sync D:/Project/MyProject --db D:/Project/MyProject/.codeguard/graph.db
+
+# 版本图谱对比（两个 git 版本差分，可输出文本 / JSON / HTML）
+python -m code_guard.cli.main diff D:/Project/MyProject --base HEAD~1 --head .
+python -m code_guard.cli.main diff D:/Project/MyProject --base HEAD~1 --head . --html diff_report.html
 
 # 生成可视化 HTML
 python -m code_guard.cli.main viz D:/Project/MyProject -o graph.html
 
-# 多 Agent 问答
+# 多 Agent 问答（含 Reflect 自检回炉）
 python -m code_guard.cli.main agent D:/Project/MyProject "这个项目用到了哪些外部工具？"
 
 # 启动 Web 服务
@@ -69,6 +93,22 @@ python -m code_guard.cli.main serve --project D:/Project/MyProject
 
 # 向量索引（语义搜索需要）
 python -m code_guard.cli.main index D:/Project/MyProject
+```
+
+### Git Hook 自动同步
+
+代码提交后自动把变更同步进图数据库（增量，不重扫）：
+
+```bash
+# 先全量建一次图
+python -m code_guard.cli.main parse D:/Project/MyProject --db D:/Project/MyProject/.codeguard/graph.db
+
+# 安装钩子
+cp scripts/hooks/post-commit D:/Project/MyProject/.git/hooks/post-commit
+cp scripts/hooks/post-checkout D:/Project/MyProject/.git/hooks/post-checkout
+chmod +x D:/Project/MyProject/.git/hooks/post-commit D:/Project/MyProject/.git/hooks/post-checkout
+
+# 之后每次 commit / 切分支，图数据库自动保持最新
 ```
 
 ---
@@ -85,6 +125,9 @@ python -m code_guard.eval.runner D:/Project/MyProject
 
 # 使用自定义测试集
 python -m code_guard.eval.runner D:/Project/MyProject --test-set tests/data_analysis.json
+
+# 语义打分：关键词子串未命中时用 embedding 相似度兜底（更宽松，适合演示；默认关，保 CI 确定性）
+python -m code_guard.eval.runner D:/Project/MyProject --test-set tests/data_analysis.json --semantic
 ```
 
 ### 自定义测试集
@@ -193,9 +236,11 @@ code-guard/src/code_guard/
 ├── agent/              # 多 Agent 模块（编排器 + 工具集）
 │   ├── orchestrator.py # Planner → Executor → Synthesizer
 │   └── tools.py        # 图查询/向量搜索/源码读取等工具
-├── parser/             # AST 解析器（Python/Java/JS/C/C++）
-├── graph/              # 图数据库（SQLite + 图查询）
+├── parser/             # AST 解析器（Python/Java/JS/Go/C/C++/Rust/C#）
+├── graph/              # 图数据库（SQLite + 图查询 + 增量替换）
 ├── analyzer/           # 模块依赖分析
+├── sync.py             # 增量同步（内容哈希 + 只重解析变更文件）
+├── diff/               # 版本图谱对比（git worktree 双版本差分）
 ├── vector/             # 向量检索（Chroma）
 ├── viz/                # D3.js 可视化 HTML 生成
 ├── eval/               # 评测系统
@@ -213,9 +258,10 @@ code-guard/src/code_guard/
 ## 📝 说明
 
 - 本项目中预置的测试集（`eval/tests/` 目录下）基于特定项目设计，**函数名/类名均为该项目特有**，直接在其他项目上跑会不通过。请参考 JSON 格式创建你自己的测试集。
-- 多 Agent 问答功能仍在实验阶段，复杂问题可能出现规划不准确的情况。
+- 多 Agent 问答功能仍在实验阶段，复杂问题可能出现规划不准确的情况；数据不足时 Reflect 回炉会自动补一轮查询，但受硬上限约束（不会无限循环）。
 - 向量检索需要先运行 `code-guard index <项目>` 建立索引。
 - 可视化生成的 HTML 文件会缓存在目标项目的 `.codeguard/cache/` 目录下。
+- 图数据库默认存 `<项目>/.codeguard/graph.db`，建议加入 `.gitignore`（`sync`/hook 会重写它）。版本对比 `diff` 要求项目是 git 仓库。
 
 ---
 

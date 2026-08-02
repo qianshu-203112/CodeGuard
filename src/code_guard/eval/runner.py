@@ -60,6 +60,37 @@ class ScoreResult:
         if self.keywords_missing is None: self.keywords_missing = []
 
 
+# ── 语义关键词命中（--semantic 可选） ──
+
+_SEMANTIC_THRESHOLD = 0.55   # 余弦相似度阈值：子串未命中时，高于此算"语义命中"
+_SEMANTIC_EMBED_CACHE = {}
+
+
+def _semantic_keyword_hit(keyword: str, answer_text: str) -> bool:
+    """关键词在回答里没按子串出现时，用 embedding 余弦相似度兜底判断。
+
+    解决"LLM 用词和测试集期望词不一致但语义对"的扣分问题（README 标注的
+    评测局限）。嵌入结果运行内缓存（答案每问一次、关键词按唯一词一次）。
+    失败时回退 False，绝不因嵌入报错影响评测。
+    """
+    try:
+        import numpy as np
+        from code_guard.vector.embedder import CodeEmbedder
+
+        def _embed(t):
+            if t not in _SEMANTIC_EMBED_CACHE:
+                _SEMANTIC_EMBED_CACHE[t] = CodeEmbedder().embed(t)
+            return _SEMANTIC_EMBED_CACHE[t]
+
+        a = np.array(_embed(keyword), dtype=float)
+        b = np.array(_embed(answer_text), dtype=float)
+        sim = float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b) + 1e-9))
+        return sim >= _SEMANTIC_THRESHOLD
+    except Exception as e:
+        print(f"  [semantic] 嵌入失败: {e}")
+        return False
+
+
 # ── 测试集加载 ──
 
 _EVAL_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -115,7 +146,8 @@ def load_test_set(test_set_path: str) -> List[EvalQuestion]:
 # ── 评测逻辑 ──
 
 def run_evals(target_project: str, test_set: List[EvalQuestion] = None,
-              test_set_name: str = "自定义", report_path: Optional[str] = None):
+              test_set_name: str = "自定义", report_path: Optional[str] = None,
+              semantic: bool = False):
     if test_set is None:
         from code_guard.eval.test_set import EVAL_QUESTIONS
         test_set = EVAL_QUESTIONS
@@ -138,7 +170,7 @@ def run_evals(target_project: str, test_set: List[EvalQuestion] = None,
     for i, eq in enumerate(test_set):
         print(f"  [{i+1}/{len(test_set)}] Q{eq.id} {eq.category:9s} — {eq.question[:50]}...", end=" ")
         sys.stdout.flush()
-        s = _eval_one(gate, eq)
+        s = _eval_one(gate, eq, semantic=semantic)
         scores.append(s)
         status = "✅" if s.score >= 0.7 else "❌"
         print(f"{status} score={s.score:.2f}")
@@ -149,7 +181,7 @@ def run_evals(target_project: str, test_set: List[EvalQuestion] = None,
     return report
 
 
-def _eval_one(gate, eq):
+def _eval_one(gate, eq, semantic: bool = False):
     s = ScoreResult(question_id=eq.id, category=eq.category, question=eq.question,
                     expected_type=eq.expected_type)
     detected = detect_intent(eq.question)
@@ -173,9 +205,17 @@ def _eval_one(gate, eq):
     s.min_count = eq.min_count or 0
     s.count_check = s.result_count >= (eq.min_count or 0) if eq.min_count else True
     if eq.keywords:
-        text = result.raw_answer.lower()
-        s.keywords_found = [kw for kw in eq.keywords if kw.lower() in text]
-        s.keywords_missing = [kw for kw in eq.keywords if kw.lower() not in text]
+        text = result.raw_answer
+        low = text.lower()
+        s.keywords_found = [kw for kw in eq.keywords if kw.lower() in low]
+        missing = [kw for kw in eq.keywords if kw.lower() not in low]
+        # --semantic：子串未命中的关键词用 embedding 相似度兜底
+        if semantic and missing:
+            for kw in missing:
+                if _semantic_keyword_hit(kw, text):
+                    s.keywords_found.append(kw)
+            missing = [kw for kw in eq.keywords if kw not in s.keywords_found]
+        s.keywords_missing = missing
         s.has_keywords = len(s.keywords_missing) == 0
     else:
         s.has_keywords = True
@@ -249,6 +289,8 @@ if __name__ == "__main__":
                         help="测试集 JSON 文件路径（相对 eval/ 目录或绝对路径）")
     parser.add_argument("--report", default=None,
                         help="报告输出路径（默认当前目录 eval_report.json）")
+    parser.add_argument("--semantic", action="store_true",
+                        help="关键词未命中时用 embedding 语义相似度兜底（更宽松，默认关，保 CI 确定性）")
     args = parser.parse_args()
 
     if args.test_set:
@@ -259,4 +301,5 @@ if __name__ == "__main__":
         questions = EVAL_QUESTIONS
         test_set_name = "默认 (Data_Analyst)"
 
-    run_evals(args.project, questions, test_set_name, report_path=args.report)
+    run_evals(args.project, questions, test_set_name, report_path=args.report,
+              semantic=args.semantic)

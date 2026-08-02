@@ -7,6 +7,7 @@
 import os
 import sys
 import json
+import html
 from pathlib import Path
 from typing import Dict, Optional
 
@@ -336,6 +337,120 @@ def generate_html(project_path: str, output_path: str = "code_graph.html",
     print(f"{module_data['stats']['total_modules']} 模块, {module_data['stats']['total_dependencies']} 依赖")
 
     graph.close()
+    return output_path
+
+
+# ── 版本对比报告 ──
+
+_DIFF_COLORS = {"added": "#2ea043", "removed": "#f85149", "modified": "#d29922"}
+
+
+def _diff_section(title: str, items: list, status: str) -> str:
+    """渲染一个 diff 列表区。items 为 dict 或 str 列表，按 key 展示。"""
+    if not items:
+        return ""
+    color = _DIFF_COLORS[status]
+    rows = []
+    for it in items[:200]:
+        if isinstance(it, str):
+            name, detail = it, ""
+        elif it.get("new"):   # 修改类条目：func + 行范围变化
+            name = it.get("func") or it.get("class") or ""
+            detail = (f"{it.get('file','')} "
+                      f"[{it['old'][0]}-{it['old'][1]} → {it['new'][0]}-{it['new'][1]}]")
+        elif it.get("func"):
+            name, detail = it["func"], f"{it.get('file','')}:{it.get('line','')}"
+        elif it.get("class"):
+            name, detail = it["class"], it.get("file", "")
+        else:
+            name, detail = str(it), ""
+        rows.append(
+            f'<li><span class="tag" style="background:{color}">{status}</span>'
+            f'<code>{html.escape(str(name))}</code>'
+            f'<span class="det">{html.escape(str(detail))}</span></li>')
+    return f'<h3>{title} <span class="cnt">{len(items)}</span></h3><ul>{"".join(rows)}</ul>'
+
+
+def generate_diff_html(diff: dict, output_path: str = "diff_report.html"):
+    """生成版本对比报告 HTML（自包含、无外部依赖，浏览器直接打开）。
+
+    统计卡片 + 新增(绿)/删除(红)/修改(橙)列表 + 变更影响区。
+    """
+    s = diff["stats"]
+    cards = [
+        ("新增文件", s["added_files"], "added"),
+        ("删除文件", s["removed_files"], "removed"),
+        ("修改文件", s["modified_files"], "modified"),
+        ("新增函数", s["added_functions"], "added"),
+        ("删除函数", s["removed_functions"], "removed"),
+        ("修改函数", s["modified_functions"], "modified"),
+    ]
+    card_html = "".join(
+        f'<div class="card"><div class="num" style="color:{_DIFF_COLORS[st]}">{n}</div>'
+        f'<div class="lbl">{t}</div></div>' for t, n, st in cards)
+
+    callee_html = ""
+    for label, key, tag in (("新增调用关系", "added", "added"),
+                            ("移除调用关系", "removed", "removed")):
+        items = diff["callees"][key]
+        if not items:
+            continue
+        rows = [f'<li><span class="tag" style="background:{_DIFF_COLORS[tag]}">{tag}</span>'
+                f'<code>{html.escape(i["func"])}</code> → '
+                f'{", ".join("<code>" + html.escape(c) + "</code>" for c in i["callees"])}</li>'
+                for i in items[:200]]
+        callee_html += f'<h3>{label} <span class="cnt">{len(items)}</span></h3><ul>{"".join(rows)}</ul>'
+
+    impact_html = ""
+    if diff["impact"]["count"]:
+        impact_html = (
+            f'<h3>变更影响 <span class="cnt">{diff["impact"]["count"]}</span></h3>'
+            f'<p class="det">修改下列函数会波及到的调用方 / 文件：</p>'
+            f'<ul>'
+            + "".join(f'<li><span class="tag" style="background:#58a6ff">波及</span>'
+                      f'<code>{html.escape(f)}</code></li>'
+                      for f in diff["impact"]["affected_functions"][:200])
+            + "</ul>")
+
+    page = f"""<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>CodeGuard 版本对比 {html.escape(diff['base'])} → {html.escape(diff['head'])}</title>
+<style>
+*{{margin:0;padding:0;box-sizing:border-box}}
+body{{font-family:-apple-system,BlinkMacSystemFont,sans-serif;background:#0d1117;color:#c9d1d9;padding:24px;max-width:960px;margin:0 auto}}
+h1{{font-size:18px;color:#58a6ff;margin-bottom:6px}}
+.sub{{color:#8b949e;font-size:13px;margin-bottom:20px}}
+.cards{{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:24px}}
+.card{{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:12px;text-align:center}}
+.card .num{{font-size:22px;font-weight:700}}
+.card .lbl{{font-size:12px;color:#8b949e;margin-top:2px}}
+h3{{color:#58a6ff;font-size:14px;margin:20px 0 8px;border-bottom:1px solid #30363d;padding-bottom:6px}}
+h3 .cnt{{color:#8b949e;font-size:12px;font-weight:normal}}
+ul{{list-style:none}}
+li{{padding:5px 0;font-size:13px;border-bottom:1px solid #21262d}}
+.tag{{display:inline-block;font-size:11px;color:#fff;padding:1px 7px;border-radius:10px;margin-right:8px;vertical-align:1px}}
+code{{background:#21262d;border-radius:4px;padding:1px 5px;font-size:12px;color:#e6edf3}}
+.det{{color:#8b949e;font-size:12px;margin-left:8px}}
+</style></head><body>
+<h1>CodeGuard 版本图谱对比</h1>
+<div class="sub">{html.escape(diff['base'])} → {html.escape(diff['head'])} ｜ 文件 {s['base_files']} → {s['head_files']} ｜ 对比 {s['changed_functions']} 个 changed 函数</div>
+<div class="cards">{card_html}</div>
+{_diff_section("新增文件", diff["files"]["added"], "added")}
+{_diff_section("删除文件", diff["files"]["removed"], "removed")}
+{_diff_section("修改文件", diff["files"]["modified"], "modified")}
+{_diff_section("新增函数", diff["functions"]["added"], "added")}
+{_diff_section("删除函数", diff["functions"]["removed"], "removed")}
+{_diff_section("修改函数", diff["functions"]["modified"], "modified")}
+{_diff_section("新增类", diff["classes"]["added"], "added")}
+{_diff_section("删除类", diff["classes"]["removed"], "removed")}
+{_diff_section("修改类", diff["classes"]["modified"], "modified")}
+{callee_html}
+{impact_html}
+</body></html>"""
+    with open(output_path, "w", encoding="utf-8") as f:
+        f.write(page)
+    print(f"已完成: {output_path}")
     return output_path
 
 

@@ -122,6 +122,11 @@ def _summarize_result(result) -> str:
 _MAX_LIST_ITEMS = 20      # list 最多保留的项数
 _MAX_CHARS = 8000         # 全局兜底：单个工具结果摘要的最大字符数
 
+# 自检回炉（Reflect）参数
+_MAX_REFLECT_ROUNDS = 1    # 数据不足时最多补一轮查询（有硬上限，防死循环）
+_CITATION_RE = re.compile(r"\[[^\[\]]*[A-Za-z][^\[\]]*\]")  # 与 quality_gate 一致的引用格式
+_UNRESOLVED_RE = re.compile(r"无法确定|未找到|没有找到|信息不足|数据不足|不完整")
+
 
 class AgentOrchestrator:
     """多 Agent 编排器"""
@@ -312,8 +317,58 @@ class AgentOrchestrator:
             steps_taken.append(step_record)
             all_data[f"step_{step.get('step', 0)}_{tool_name}"] = result
 
-        # ── 阶段 3: 合成 ──
+        # ── 阶段 3: 合成 + 自检回炉（Reflect） ──
+        # 首次合成后检查回答是否"基于足够数据"：截断 / 无法确定 / 无引用 →
+        # 规则式补一轮查询再合成。有 _MAX_REFLECT_ROUNDS 硬上限，不会死循环。
         emit("synthesize", None)
+        synthesis, steps_summary = self._synthesize(question, steps_taken)
+
+        reflect_rounds = 0
+        while reflect_rounds < _MAX_REFLECT_ROUNDS:
+            reason = self._reflect_verdict(question, steps_taken, synthesis,
+                                           steps_summary)
+            if reason is None:
+                break
+            reflect_rounds += 1
+            emit("reflect", {"reason": reason, "round": reflect_rounds})
+
+            for step in self._reflect_plan(question, steps_taken, reason):
+                tool_name, args = step["tool"], step["args"]
+                emit("step_start", {
+                    "step": step.get("step", 0), "tool": tool_name,
+                    "args": args, "purpose": step.get("purpose", ""),
+                })
+                result = self._execute_tool(tool_name, args)
+                emit("step_done", {
+                    "step": step.get("step", 0), "tool": tool_name,
+                    "result": result,
+                })
+                step_record = {
+                    "step": step.get("step", 0), "tool": tool_name,
+                    "args": args, "purpose": step.get("purpose", ""),
+                    "result": result,
+                }
+                steps_taken.append(step_record)
+                all_data[f"step_{step.get('step', 0)}_{tool_name}"] = result
+
+            # 带补充数据重新合成
+            emit("synthesize", None)
+            synthesis, steps_summary = self._synthesize(question, steps_taken)
+
+        emit("answer", synthesis)
+
+        return {
+            "answer": synthesis,
+            "steps": steps_taken,
+            "raw_data": all_data,
+        }
+
+    def _synthesize(self, question: str, steps_taken: List[Dict]):
+        """基于执行步骤合成最终回答。
+
+        Returns:
+            (回答文本, 步骤摘要)——摘要含截断标注，供 _reflect_verdict 判断。
+        """
         steps_summary = "\n".join(
             f"步骤{s['step']}: {s['tool']}({json.dumps(s['args'], ensure_ascii=False)}) "
             f"→ {_summarize_result(s.get('result'))}"
@@ -324,13 +379,62 @@ class AgentOrchestrator:
             f"问题: {question}\n\n工具调用结果:\n{steps_summary}",
             temp=0.1, max_tokens=2048
         )
-        emit("answer", synthesis)
+        return synthesis, steps_summary
 
-        return {
-            "answer": synthesis,
-            "steps": steps_taken,
-            "raw_data": all_data,
-        }
+    def _reflect_verdict(self, question: str, steps_taken: List[Dict],
+                         synthesis: str, steps_summary: str) -> Optional[str]:
+        """判断回答是否需要回炉补数据。返回原因字符串或 None（无需回炉）。
+
+        三个信号：
+          truncated    工具结果被裁剪（__truncated__ / 已省略 / 截断）——数据不完整
+          unresolved   LLM 明确说"无法确定/未找到/数据不足"
+          no_citation  回答无任何 [引用]，且问题明确指向某函数/文件
+        """
+        if re.search(r"__truncated__|已省略|截断", steps_summary):
+            return "truncated"
+        if _UNRESOLVED_RE.search(synthesis):
+            return "unresolved"
+        # 统计/概览类问题（"总共有多少"）的答案本就不需要引用，触发会白花一轮 LLM，
+        # 所以只在问题含具体目标标识符时才把"无引用"当作信号。
+        if not _CITATION_RE.search(synthesis) and extract_raw_keyword(question):
+            return "no_citation"
+        return None
+
+    def _reflect_plan(self, question: str, steps_taken: List[Dict],
+                      reason: str) -> List[Dict]:
+        """生成规则式补充查询计划（≤2 步）。
+
+        用规则而非 LLM 规划：LLM 规划对"补什么数据"不可靠（已多次验证），
+        规则式按失败原因直接补最有信息量的查询。
+        """
+        plan = []
+        seen_tools = {s["tool"] for s in steps_taken}
+
+        vs = self.tools.get("vector")
+        if vs and vs.is_available():
+            plan.append({
+                "step": 100, "tool": "search",
+                "args": {"query": question, "n": 5},
+                "purpose": "语义搜索补充上下文",
+            })
+
+        if reason in ("unresolved", "no_citation"):
+            kw = extract_raw_keyword(question)
+            if kw and "get_detail" not in seen_tools:
+                plan.append({
+                    "step": 101, "tool": "get_detail",
+                    "args": {"function_name": kw},
+                    "purpose": f"查询 {kw} 的详情",
+                })
+
+        if reason == "truncated" and "get_stats" not in seen_tools:
+            plan.append({
+                "step": 102, "tool": "get_stats",
+                "args": {},
+                "purpose": "补充范围统计，避免无法确定全貌",
+            })
+
+        return plan[:2]
 
     def _auto_plan(self, question: str) -> List[Dict]:
         """自动生成简单计划（不依赖 LLM 规划）"""

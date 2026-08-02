@@ -67,6 +67,13 @@ CREATE TABLE IF NOT EXISTS imports (
     FOREIGN KEY (file_id) REFERENCES files(id)
 );
 
+-- 增量同步用：记录每个文件内容哈希，判断文件是否变更（不用 mtime，
+-- checkout/换分支时 mtime 不可靠）。CREATE IF NOT EXISTS 保证旧库打开时自动补表。
+CREATE TABLE IF NOT EXISTS file_hashes (
+    path TEXT PRIMARY KEY,
+    sha1 TEXT NOT NULL
+);
+
 -- 索引
 CREATE INDEX IF NOT EXISTS idx_functions_file ON functions(file_id);
 CREATE INDEX IF NOT EXISTS idx_functions_name ON functions(name);
@@ -219,6 +226,66 @@ class CodeGraph:
         for file_path, result in results.items():
             self.load_parse_result(result)
         self.conn.commit()
+
+    # ── 增量同步（删除 / 替换 / 内容哈希） ──
+
+    def remove_file(self, file_path: str) -> None:
+        """从图中移除一个文件的全部数据（增量同步用）。
+
+        顺序敏感：call_edges 有 FK 指向 functions，必须先删调用边再删函数，
+        否则 PRAGMA foreign_keys=ON 会因残留引用报错。
+        """
+        norm = Path(file_path).as_posix()
+        row = self.conn.execute(
+            "SELECT id FROM files WHERE path = ?", (norm,)).fetchone()
+        if row is None:
+            return
+        file_id = row[0]
+
+        self.conn.execute(
+            "DELETE FROM call_edges WHERE caller_func_id IN "
+            "(SELECT id FROM functions WHERE file_id = ?)", (file_id,))
+        self.conn.execute(
+            "DELETE FROM functions WHERE file_id = ?", (file_id,))
+        self.conn.execute(
+            "DELETE FROM classes WHERE file_id = ?", (file_id,))
+        self.conn.execute(
+            "DELETE FROM imports WHERE file_id = ?", (file_id,))
+        self.conn.execute("DELETE FROM files WHERE id = ?", (file_id,))
+        self.conn.execute("DELETE FROM file_hashes WHERE path = ?", (norm,))
+        self.conn.commit()
+
+    def replace_file(self, file_path: str, result: ParseResult) -> None:
+        """原子替换一个文件：移除旧数据后载入新解析结果。"""
+        self.remove_file(file_path)
+        self.load_parse_result(result)
+        self.conn.commit()
+
+    def set_file_hash(self, file_path: str, sha1: str) -> None:
+        """记录文件内容哈希。"""
+        self.conn.execute(
+            "INSERT OR REPLACE INTO file_hashes (path, sha1) VALUES (?, ?)",
+            (Path(file_path).as_posix(), sha1))
+        self.conn.commit()
+
+    def get_file_hash(self, file_path: str) -> Optional[str]:
+        """读取文件内容哈希；从未记录过返回 None。"""
+        row = self.conn.execute(
+            "SELECT sha1 FROM file_hashes WHERE path = ?",
+            (Path(file_path).as_posix(),)).fetchone()
+        return row[0] if row else None
+
+    def delete_file_hash(self, file_path: str) -> None:
+        """删除一个文件哈希（文件从磁盘消失时）。"""
+        self.conn.execute(
+            "DELETE FROM file_hashes WHERE path = ?",
+            (Path(file_path).as_posix(),))
+        self.conn.commit()
+
+    def list_indexed_files(self) -> Set[str]:
+        """返回图中已索引的全部文件路径（绝对路径的 posix 形式）。"""
+        rows = self.conn.execute("SELECT path FROM files").fetchall()
+        return {r[0] for r in rows}
 
     # ── 查询 ──
 
