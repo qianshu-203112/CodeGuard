@@ -26,6 +26,8 @@ full = [
     "tree-sitter-rust>=0.23.0",
     "tree-sitter-c-sharp>=0.21.0",
 ]
+http = ["uvicorn>=0.23.0"]                    # MCP HTTP 通道
+web = ["fastapi>=0.100.0", "uvicorn>=0.23.0"] # Web 服务（原本未声明的运行依赖）
 
 [tool.setuptools.packages.find]
 where = ["src"]

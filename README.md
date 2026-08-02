@@ -156,6 +156,73 @@ chmod +x D:/Project/MyProject/.git/hooks/post-commit D:/Project/MyProject/.git/h
 
 ---
 
+## 🤖 MCP Server（MCP-first）
+
+CodeGuard 的核心能力已暴露为 **MCP 服务**：任何 MCP 客户端（Claude Code、Cursor、Claude Desktop、经 `mcp-remote` 桥接的其它工具）都可以直接调用代码分析能力。所有工具返回**单个 JSON 字符串**（结构化数据），支持**多项目动态加载**——不必启动时固定一个项目。
+
+### 接入方式
+
+**方式一：stdio（本机 Claude Code / Cursor）**
+
+在 `~/.claude/settings.json`（Claude Code）或对应 Cursor 配置里添加：
+
+```json
+{
+  "mcpServers": {
+    "code-guard": {
+      "command": "python",
+      "args": ["-m", "code_guard.mcp.server"],
+      "env": { "CODE_GUARD_PROJECT": "D:/Project/MyProject" }
+    }
+  }
+}
+```
+
+**方式二：HTTP（本机 localhost，无需任何云服务器）**
+
+```bash
+python -m code_guard.mcp.server --transport http --port 8978
+# 可选 Bearer 鉴权
+python -m code_guard.mcp.server --transport http --port 8978 --api-key 你的密钥
+# 其它 MCP 客户端经 mcp-remote 桥接
+npx mcp-remote http://127.0.0.1:8978/mcp
+```
+
+> HTTP 就是本机一个 uvicorn 进程（默认 `http://127.0.0.1:8978/mcp`），不依赖任何云服务器；`--api-key` 开启后，未带 `Authorization: Bearer <key>` 的请求返回 401。
+
+### 工具一览（16 个）
+
+| 分类 | 工具 | 说明 |
+|------|------|------|
+| 生命周期 | `load_project` / `refresh_project` / `unload_project` / `list_projects` | 动态加载多项目；换项目无需重启 |
+| 图查询 | `query_callers` / `query_callees` / `search_functions` / `get_function_detail` / `analyze_impact` / `get_file_structure` / `get_project_stats` | 调用关系 / 影响 / 结构 / 统计 |
+| 分析 | `analyze_modules` / `diff_versions` / `ask` / `visualize` | 模块依赖 / 版本对比 / 多 Agent 问答 / 可视化 |
+| **产品级** | `review_diff` | 版本审查：diff + 逐函数影响 + AI 摘要 |
+
+> 工具名与旧版保持一致，返回值从"给人看的文本"改为"单个 JSON 字符串"（刻意变更，预发布阶段）。查询类工具均接受可选 `project` 参数，缺省用最近加载的项目；未加载的项目需先 `load_project`。
+
+### review_diff 用法示例
+
+```jsonc
+// review_diff("HEAD~1", ".", with_summary=false) 返回的结构化报告（节选）
+{
+  "base": "HEAD~1", "head": ".",
+  "stats": { "added_functions": 1, "modified_files": 1, "changed_functions": 1 },
+  "impact": { "affected_functions": ["..."], "affected_files": ["a.py"], "count": 1 },
+  "findings": [
+    { "function": "farewell", "file": "a.py", "line": 7, "action": "added",
+      "impact": { "direct_callers": [], "affected_files": [] } }
+  ],
+  "summary": "审查意见……（需配置 LLM_API_KEY 才生成）"
+}
+```
+
+对 agent 的一句话工作流示例：
+
+> 先 `load_project("D:/Project/MyProject")`，再 `review_diff("HEAD~1", ".")`，把有风险的改动按文件列给我，重点标注被多处调用却发生修改的函数。
+
+---
+
 ## 📊 评测
 
 CodeGuard 内置了一个评测系统，用预设问题测试代码理解准确率。
@@ -291,7 +358,8 @@ code-guard/src/code_guard/
 │   ├── test_set.py     # 默认测试集（Data_Analyst 20题）
 │   └── tests/          # 预置 JSON 测试集
 ├── server/             # Web 服务器（FastAPI）
-├── mcp/                # MCP Server 对接
+├── mcp/                # MCP Server（stdio + HTTP 双通道）
+├── service.py          # MCP-first 服务层（多项目注册表 + 结构化操作）
 ├── cli/                # CLI 入口
 └── config/             # 配置
 ```

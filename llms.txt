@@ -1,0 +1,34 @@
+# CodeGuard
+
+> 代码知识图谱 + 多 Agent 协作 + 自然语言问答 + MCP-first 代码分析服务
+
+## What
+
+CodeGuard 是一个基于 Tree-sitter AST 解析 + SQLite 代码图 + LLM 推理的代码分析工具，支持 Python/Java/JS/TS/Go/C/C++/Rust/C# 共 8 种语言。核心能力以 MCP 服务暴露：加载项目 → 查询函数调用/变更影响/版本对比/版本审查。
+
+## How to use
+
+- **MCP（推荐，agent 直接调用）**：配置到 Claude Code / Cursor 的 mcpServers（stdio），或 `python -m code_guard.mcp.server --transport http`。见 README「MCP Server」章节。
+- **CLI**：`python -m code_guard.cli.main <parse|query|impact|search|sync|diff|viz|agent|index|serve> ...`
+- **Web**：`python -m code_guard.cli.main serve --project <路径>`
+
+## MCP tools
+
+- 生命周期：`load_project(path, name)` / `refresh_project(path)` / `unload_project(path)` / `list_projects()`
+- 图查询：`query_callers(function_name, project)` / `query_callees(...)` / `search_functions(keyword, limit, project)` / `get_function_detail(function_name, project)` / `analyze_impact(function_name, project)` / `get_file_structure(file_path, project)` / `get_project_stats(project)`
+- 分析：`analyze_modules(project)` / `diff_versions(base_ref, head_ref, project)` / `ask(question, project)` / `visualize(output_path, project)`
+- 版本审查：`review_diff(base_ref, head_ref, project, with_summary)`
+
+所有工具返回单个 JSON 字符串。查询类工具用 `project` 参数指定项目（缺省用最近加载的项目）。
+
+## Examples
+
+```text
+1. load_project("D:/Project/MyProject")
+2. query_callers("load_data")
+3. review_diff("HEAD~1", ".", with_summary=true)
+```
+
+## License
+
+MIT
