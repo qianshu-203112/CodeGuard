@@ -4,6 +4,8 @@
 
 CodeGuard 是一个基于 **Tree-sitter AST 解析 + 图数据库 + LLM 推理**的代码分析工具。它能解析 Python/Java/JS/TS/Go/C/C++/Rust/C# 项目，构建函数调用图、类继承图、模块依赖图，然后通过自然语言问答来分析代码。
 
+**一句话架构**：`Tree-sitter AST 解析 → SQLite 代码图（函数/类/调用边/依赖）→ 图查询 + 向量语义检索兜底 + 多 Agent 合成回答（带引用校验）`
+
 ---
 
 ## ✨ 功能
@@ -56,6 +58,47 @@ CodeGuard 是一个基于 **Tree-sitter AST 解析 + 图数据库 + LLM 推理**
 | C# | Tree-sitter C# | ✅ |
 
 > 解析器按扩展名自动分发，缺少某个语言包时仅跳过该语言文件（不报错）。装全量：`pip install -e ".[full]"`。
+
+---
+
+## 🎬 真实问答示例
+
+问：**谁调用了 `get_callers` 函数？**
+
+> `get_callers` 被以下函数调用：
+> - `GraphQueryTool.get_callers` [src/code_guard/agent/tools.py:21]
+> - `cmd_query` [src/code_guard/cli/main.py:78]
+> - `CodeGraph.analyze_change_impact`（两处，[code_graph.py:443] 和 [code_graph.py:458]）
+> - `QualityGate._query_graph`（多处，[quality_gate.py:187] 等）
+>
+> 每条结论都带 `[文件:行号]` 引用，可被**质量门**逐条校验——回答基于图数据而非 LLM 幻觉。
+
+问：**`analyze_change_impact` 这个方法是干什么的？**
+
+> `CodeGraph.analyze_change_impact` 执行变更影响分析：通过**反向可达性分析**确定修改某个函数会影响哪些函数/测试。它从目标函数出发 BFS 回溯所有直接/间接调用者直到 `max_depth`，记录受影响函数、受影响文件和受影响测试，返回结构化结果。
+
+---
+
+## 📈 对比实验：图检索 vs LLM 纯问答基线
+
+CodeGuard 的核心论点是「**解析建图 + 结构化检索**」比「直接把源码丢给 LLM」更强。为此做了公平对比：同一批问题、同一个 LLM（qwen-max, temp=0.1），唯一区别是上下文来源——图数据 vs 原始源码（naive 文件检索）。
+
+| 测试集 | 规模 | 图版 | 基线（直接读源码） | 差距 |
+|--------|------|:----:|:----:|:----:|
+| 拼图 (Java) | 15 文件 / 1637 行 | 88% | 84% | +4 |
+| CodeGuard 自身 (Python) | 37 文件 / 6549 行 | **99%** | 72% | **+27** |
+| 贪吃蛇 (C++) | 3054 文件 / 147 万行 | **95%** | 78% | **+17** |
+
+**核心发现：图的优势随代码库复杂度放大**
+
+- **小而干净**（1637 行）→ 基线几乎持平——全项目喂得下，LLM 直接读源码就够了
+- **中型**（CodeGuard 自身）→ 图版碾压：callers 精确枚举全部调用者，基线漏答
+- **大而杂**（147 万行混着编译器头文件）→ **基线检索崩溃**：
+  - "play 被谁调用" → 答成 MinGW 编译器里的 `splay`
+  - "搜索 paint 相关" → 检索到 Windows SDK 的 `mshtmlc.h`，答"没有 paint 相关函数"
+  - 图版靠结构化索引 callers/search/stats 全 100%——它知道每个函数在哪
+
+> 口径说明：总分公式含计数/置信度维度，结构上偏图版；看差距可落到最公平的**关键词命中**：图版 41/43 vs 基线 38/43，图版仍领先。完整实验代码在 `eval/eval_baseline.py`。
 
 ---
 
