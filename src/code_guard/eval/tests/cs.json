@@ -1,0 +1,41 @@
+{
+  "name": "cs_sample",
+  "description": "C# 解析器回归测试集（tests/fixtures/cs_sample）",
+  "questions": [
+    {
+      "id": 1,
+      "category": "stats",
+      "question": "这个项目总共有多少函数？",
+      "expected_type": "stats",
+      "expected_target": "",
+      "min_count": 3,
+      "keywords": []
+    },
+    {
+      "id": 2,
+      "category": "callers",
+      "question": "谁调用了 Calculator.Add 方法？",
+      "expected_type": "callers",
+      "expected_target": "Add",
+      "min_count": 1,
+      "keywords": ["Main", "Program"]
+    },
+    {
+      "id": 3,
+      "category": "callees",
+      "question": "Program.Main 方法调用了哪些方法？",
+      "expected_type": "callees",
+      "expected_target": "Main",
+      "min_count": 2,
+      "keywords": ["Add", "Multiply"]
+    },
+    {
+      "id": 4,
+      "category": "structure",
+      "question": "Calculator.cs 文件里有什么类？",
+      "expected_type": "structure",
+      "expected_target": "Calculator.cs",
+      "keywords": ["Calculator", "Program"]
+    }
+  ]
+}

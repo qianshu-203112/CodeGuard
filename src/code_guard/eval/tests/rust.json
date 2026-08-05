@@ -1,0 +1,41 @@
+{
+  "name": "rust_sample",
+  "description": "Rust 解析器回归测试集（tests/fixtures/rust_sample）",
+  "questions": [
+    {
+      "id": 1,
+      "category": "stats",
+      "question": "这个项目总共有多少函数？",
+      "expected_type": "stats",
+      "expected_target": "",
+      "min_count": 4,
+      "keywords": []
+    },
+    {
+      "id": 2,
+      "category": "callers",
+      "question": "谁调用了 area 函数？",
+      "expected_type": "callers",
+      "expected_target": "area",
+      "min_count": 1,
+      "keywords": ["main"]
+    },
+    {
+      "id": 3,
+      "category": "callees",
+      "question": "main 函数调用了哪些函数？",
+      "expected_type": "callees",
+      "expected_target": "main",
+      "min_count": 2,
+      "keywords": ["Point", "area"]
+    },
+    {
+      "id": 4,
+      "category": "structure",
+      "question": "main.rs 文件里有什么类和函数？",
+      "expected_type": "structure",
+      "expected_target": "main.rs",
+      "keywords": ["Point", "main", "area"]
+    }
+  ]
+}
