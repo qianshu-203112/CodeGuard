@@ -269,7 +269,8 @@ class CodeAnalysisService:
             "findings": self._review_findings(diff, handle, head_ref),
         }
         if with_summary:
-            report["summary"] = _llm_review_summary(report)
+            diff_text = _git_diff_text(handle.path, base_ref, head_ref or ".")
+            report["summary"] = _llm_review_summary(report, diff_text)
         return report
 
     # ── 内部工具 ──
@@ -358,9 +359,44 @@ class CodeAnalysisService:
 
 # ── 版本审查摘要（复用 LLM，不依赖 orchestrator 的工具集） ──
 
+_MAX_DIFF_CHARS = 5000  # 喂给摘要的实际 diff 最大字符数（保持 prompt 有界）
 
-def _llm_review_summary(report: dict) -> str:
-    """基于 review_diff 结构化报告生成一段 AI 审查摘要。
+
+def _git_diff_text(repo: str, base: str, head: str, max_files: int = 10) -> str:
+    """取 base→head 的实际代码 diff（hunk 文本），供 AI 摘要做代码级审查。
+
+    只有结构化数据（函数名+影响）时 LLM 看不到代码改动、只能泛泛而谈；
+    喂入真实 diff 后才能指出具体缺陷（除零/越界/逻辑错）。head 为工作树时
+    用 `git diff base`；否则 `git diff base head`。失败返回空串不阻断。
+    """
+    import subprocess
+
+    try:
+        name_cmd = ["git", "-C", repo, "diff", "--name-only"] + \
+            ([] if head == "." else [head]) + [base]
+        r = subprocess.run(name_cmd, capture_output=True, text=True,
+                           encoding="utf-8", errors="replace")
+        if r.returncode != 0:
+            return ""
+        files = [ln.strip() for ln in r.stdout.splitlines() if ln.strip()][:max_files]
+        if not files:
+            return ""
+        diff_cmd = ["git", "-C", repo, "diff", "--no-color"] + \
+            ([] if head == "." else [head]) + [base, "--"] + files
+        r2 = subprocess.run(diff_cmd, capture_output=True, text=True,
+                            encoding="utf-8", errors="replace")
+        if r2.returncode != 0:
+            return ""
+        text = r2.stdout.strip()
+        if len(text) > _MAX_DIFF_CHARS:
+            text = text[:_MAX_DIFF_CHARS] + f"\n...(diff 过长已截断，共 {len(r2.stdout)} 字符)"
+        return text
+    except Exception:  # noqa: BLE001  (diff 失败不阻断审查)
+        return ""
+
+
+def _llm_review_summary(report: dict, diff_text: str = "") -> str:
+    """基于 review_diff 结构化报告（+ 实际代码 diff）生成 AI 审查摘要。
 
     无 LLM_API_KEY 时跳过（报告本身已是结构化数据，可直接消费）。
     """
@@ -391,12 +427,21 @@ def _llm_review_summary(report: dict) -> str:
         else:
             lines.append(f"- [{f['action']}] {f['function']} ({f['file']})")
 
+    if diff_text:
+        lines.append("\n实际代码改动（diff，用于精确定位代码缺陷）：")
+        lines.append(diff_text)
+
     prompt = ("你是一个代码审查助手。基于以下两个 git 版本的差异数据输出审查意见。\n"
               "要求：\n"
               "1. 只基于给定数据，不要编造\n"
               "2. 每条意见引用 [文件:函数] 或 [函数名]\n"
               "3. 优先指出高风险改动（被多处调用却发生修改、波及面大的新增/删除）\n"
-              "4. 数据不足时如实说明\n\n"
+              "4. 数据不足时如实说明\n"
+              "5. 结合给出的实际代码 diff，尽力指出具体的代码缺陷/风险点"
+              "（如除零、越界/off-by-one、错误的条件判断、逻辑被移除等），"
+              "并说明风险；diff 中看不到缺陷就如实说，不要硬凑\n"
+              "6. 不要假设新版本一定更好——diff 是 base→head 的变更，"
+              "客观评估这些改动是否引入了新的缺陷、回归或风险\n\n"
               + "\n".join(lines))
     try:
         resp = client.chat.completions.create(

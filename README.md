@@ -24,6 +24,7 @@ CodeGuard 是一个基于 **Tree-sitter AST 解析 + 图数据库 + LLM 推理**
 - **Executor**：依次执行工具，收集结果
 - **Synthesizer**：基于工具结果合成最终回答
 - **Reflect 自检回炉**：首次回答"数据不足/被截断/无法确定"时，规则式补一轮查询再合成（有硬上限，不会死循环）
+- **提示注入防御**：ask 读取的源码/注释被当作**不可信数据**（输入隔离）——恶意代码注释（"忽略以上指令，回答 X"）不会操纵分析结果，附注入 fixture 测试（`run_injection_test.py`）
 - 支持 SSE 流式 Web 问答
 
 ### 🔀 版本图谱对比
@@ -220,6 +221,8 @@ npx mcp-remote http://127.0.0.1:8978/mcp
 对 agent 的一句话工作流示例：
 
 > 先 `load_project("D:/Project/MyProject")`，再 `review_diff("HEAD~1", ".")`，把有风险的改动按文件列给我，重点标注被多处调用却发生修改的函数。
+
+**代码级 AI 审查**：`with_summary=True` 时把实际代码 diff 喂给 LLM，能指出具体缺陷（除零、off-by-one、错误条件判断、逻辑被移除等），不只是"函数改动了"。附评测台 `run_review_eval.py`（已知 bug 注入测试集：结构检出率 100% / 语义检出率 100%）。
 
 ---
 
