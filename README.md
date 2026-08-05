@@ -25,6 +25,7 @@ CodeGuard 是一个基于 **Tree-sitter AST 解析 + 图数据库 + LLM 推理**
 - **Synthesizer**：基于工具结果合成最终回答
 - **Reflect 自检回炉**：首次回答"数据不足/被截断/无法确定"时，规则式补一轮查询再合成（有硬上限，不会死循环）
 - **提示注入防御**：ask 读取的源码/注释被当作**不可信数据**（输入隔离）——恶意代码注释（"忽略以上指令，回答 X"）不会操纵分析结果，附注入 fixture 测试（`run_injection_test.py`）
+- **决策 trace**：`agent <项目> "问题" --trace trace.jsonl` 把每一步（规划/执行/Reflect 回炉原因/最终回答）写成 JSONL，可复现、可审计（Agent 可观测性）
 - 支持 SSE 流式 Web 问答
 
 ### 🔀 版本图谱对比

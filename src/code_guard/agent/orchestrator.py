@@ -133,6 +133,28 @@ _MAX_REFLECT_ROUNDS = 1    # 数据不足时最多补一轮查询（有硬上限
 _CITATION_RE = re.compile(r"\[[^\[\]]*[A-Za-z][^\[\]]*\]")  # 与 quality_gate 一致的引用格式
 _UNRESOLVED_RE = re.compile(r"无法确定|未找到|没有找到|信息不足|数据不足|不完整")
 
+CRITIC_PROMPT = """你是代码分析的校验者（Critic/对抗 Agent）。对照"工具数据"，审查"最终回答"是否每一条结论都有数据支撑。
+
+规则：
+1. 回答中每一句关于代码的事实（谁调用谁、函数做什么、在哪个文件/行号）都必须能在工具数据里找到依据
+2. 找出回答里"没有数据支撑的断言 / 过度推断 / 与数据矛盾"的表述，逐条说明
+3. 不要挑剔措辞、不要重复已有的数据，只找实质性错误或编造
+4. 数据支持正确就 verdict=pass
+
+输出 JSON：{"verdict": "pass"|"issues", "issues": ["具体问题..."]}"""
+
+
+def _extract_json_obj(text: str) -> dict:
+    """从 LLM 输出里提取第一个 JSON 对象。"""
+    m = re.search(r"\{.*\}", text, re.S)
+    if not m:
+        return {}
+    try:
+        d = json.loads(m.group(0))
+        return d if isinstance(d, dict) else {}
+    except json.JSONDecodeError:
+        return {}
+
 
 class AgentOrchestrator:
     """多 Agent 编排器"""
@@ -371,6 +393,12 @@ class AgentOrchestrator:
             emit("synthesize", None)
             synthesis, steps_summary = self._synthesize(question, steps_taken)
 
+        # ── 阶段 4: Critic 对抗校验（追加备注，不改主体回答——保 eval 回归稳定） ──
+        critique = self._critic_check(question, steps_taken, synthesis)
+        if critique:
+            emit("critic", {"issues": critique})
+            synthesis = synthesis + f"\n\n🔍 [Critic 校验] 需复核的点：{critique}"
+
         emit("answer", synthesis)
 
         return {
@@ -451,6 +479,30 @@ class AgentOrchestrator:
             })
 
         return plan[:2]
+
+    def _critic_check(self, question: str, steps_taken: List[Dict],
+                      synthesis: str) -> str:
+        """Critic 对抗校验：对照工具数据审查最终回答。
+
+        找出"无数据支撑的断言/过度推断/与数据矛盾"的点；返回要追加的校验备注
+        （无问题返回空串）。独立 LLM 调用，失败不影响回答（追加层，可观测性）。
+        """
+        try:
+            steps_summary = "\n".join(
+                f"步骤{s['step']}: {s['tool']}({json.dumps(s['args'], ensure_ascii=False)}) "
+                f"→ {_summarize_result(s.get('result'))}" for s in steps_taken)
+            resp = self._call_llm(
+                CRITIC_PROMPT,
+                f"问题: {question}\n\n工具数据:\n{steps_summary}\n\n最终回答:\n{synthesis}",
+                temp=0.1, max_tokens=1024)
+            d = _extract_json_obj(resp)
+            if d.get("verdict") == "issues" and isinstance(d.get("issues"), list):
+                issues = [str(i) for i in d["issues"] if i][:3]
+                if issues:
+                    return "；".join(issues)
+        except Exception:  # noqa: BLE001  (Critic 失败不阻断回答)
+            pass
+        return ""
 
     def _auto_plan(self, question: str) -> List[Dict]:
         """自动生成简单计划（不依赖 LLM 规划）"""
