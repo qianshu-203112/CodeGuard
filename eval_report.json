@@ -2,25 +2,25 @@
   "summary": {
     "total": 12,
     "passed": 12,
-    "avg_score": "98%",
-    "time": "104.0s",
-    "test_set": "codeguard-regress6"
+    "avg_score": "96%",
+    "time": "103.2s",
+    "test_set": "codeguard"
   },
   "category_scores": {
-    "callers": "100%",
+    "callers": "93%",
     "callees": "100%",
     "search": "100%",
-    "detail": "90%",
+    "detail": "85%",
     "impact": "100%",
     "structure": "100%",
     "stats": "100%"
   },
   "project_stats": {
-    "files": 36,
-    "functions": 194,
-    "classes": 24,
-    "calls": 1418,
-    "imports": 153
+    "files": 44,
+    "functions": 270,
+    "classes": 28,
+    "calls": 1985,
+    "imports": 194
   },
   "details": [
     {
@@ -41,7 +41,7 @@
       "confidence": 1.0,
       "passed_gate": true,
       "has_speculative": false,
-      "raw_answer": "`get_callers` 函数被以下函数调用：\n\n- `GraphQueryTool.get_callers` [D:/Project/CodeGuard/code-guard/src/code_guard/agent/tools.py:21]\n- `cmd_query` [D:/Project/CodeGuard/code-guard/src/code_guard/cli/main.py:69",
+      "raw_answer": "根据提供的图数据，`get_callers` 函数被以下函数调用：\n\n- `GraphQueryTool.get_callers` [src/code_guard/agent/tools.py:21]\n- `cmd_query` [src/code_guard/cli/main.py:78]\n- `CodeGraph.analyze_change_impact` [src/code_guard/g",
       "score": 1.0
     },
     {
@@ -51,20 +51,21 @@
       "intent_correct": true,
       "expected_type": "callers",
       "detected_type": "callers",
-      "has_keywords": true,
+      "has_keywords": false,
       "keywords_found": [
-        "parse_project",
+        "parse_project"
+      ],
+      "keywords_missing": [
         "cmd_parse"
       ],
-      "keywords_missing": [],
       "count_check": true,
-      "result_count": 6,
+      "result_count": 4,
       "min_count": 2,
       "confidence": 1.0,
       "passed_gate": true,
       "has_speculative": false,
-      "raw_answer": "`parse_file` 函数被以下函数调用：\n\n- `cmd_parse` [D:/Project/CodeGuard/code-guard/src/code_guard/cli/main.py:34]\n- `cmd_stats` [D:/Project/CodeGuard/code-guard/src/code_guard/cli/main.py:151]\n- `cmd_modules` [D",
-      "score": 1.0
+      "raw_answer": "`parse_file` 函数被以下函数调用：\n\n- `cmd_stats` [src/code_guard/cli/main.py:187]\n- `cmd_modules` [src/code_guard/cli/main.py:238]\n- `parse_project` [src/code_guard/parser/ast_parser.py:360]\n- `parse_one_file` ",
+      "score": 0.8
     },
     {
       "question_id": 3,
@@ -84,7 +85,7 @@
       "confidence": 1.0,
       "passed_gate": true,
       "has_speculative": false,
-      "raw_answer": "`extract_function_name` 被以下函数调用：\n\n- `AgentOrchestrator._auto_plan` [D:/Project/CodeGuard/code-guard/src/code_guard/agent/orchestrator.py:439]\n- `QualityGate._query_graph` [D:/Project/CodeGuard/code-gu",
+      "raw_answer": "`extract_function_name` 被以下函数调用：\n\n- `AgentOrchestrator._auto_plan`，位于文件 `src/code_guard/agent/orchestrator.py` 的第 549 行 [src/code_guard/agent/orchestrator.py:549]\n- `QualityGate._query_graph`，位于文件 `sr",
       "score": 1.0
     },
     {
@@ -107,7 +108,7 @@
       "confidence": 1.0,
       "passed_gate": true,
       "has_speculative": false,
-      "raw_answer": "`QualityGate.answer` 方法调用了以下函数和方法：\n\n1. `detect_intent` [quality_gate.py:136]\n2. `self._query_graph` [quality_gate.py:137]\n3. `self._vector_search` [quality_gate.py:141]\n4. `self._is_empty` [quality_ga",
+      "raw_answer": "`QualityGate.answer` 方法调用了以下函数和方法：\n\n- `detect_intent` [src/code_guard/quality_gate.py:136]\n- `self._query_graph` [src/code_guard/quality_gate.py:137]\n- `self._vector_search` [src/code_guard/quality_ga",
       "score": 1.0
     },
     {
@@ -130,7 +131,7 @@
       "confidence": 1.0,
       "passed_gate": true,
       "has_speculative": false,
-      "raw_answer": "根据提供的图数据，`cmd_query` 这个 CLI 命令调用了 `CodeGraph` 的以下方法：\n\n- `graph.get_callers` [main.py:69]\n- `graph.get_callees` [main.py:70]\n- `graph.get_function_detail` [main.py:71]\n- `graph.close` [main.py:91]\n\n这些方",
+      "raw_answer": "根据提供的图数据，`cmd_query` 这个 CLI 命令调用了 `CodeGraph` 的以下方法：\n\n- `graph.get_callers` [src/code_guard/cli/main.py:78]\n- `graph.get_callees` [src/code_guard/cli/main.py:79]\n- `graph.get_function_detail` [src/cod",
       "score": 1.0
     },
     {
@@ -146,12 +147,12 @@
       ],
       "keywords_missing": [],
       "count_check": true,
-      "result_count": 20,
+      "result_count": 27,
       "min_count": 3,
       "confidence": 1.0,
       "passed_gate": true,
       "has_speculative": false,
-      "raw_answer": "根据提供的图数据，以下是与 `parse` 相关的函数及其位置信息：\n\n1. `AgentOrchestrator._parse_plan` [D:/Project/CodeGuard/code-guard/src/code_guard/agent/orchestrator.py:186]\n2. `cmd_parse` [D:/Project/CodeGuard/code-guard/src/co",
+      "raw_answer": "根据提供的图数据，以下是与 `parse` 相关的函数列表：\n\n1. `AgentOrchestrator._parse_plan` [src/code_guard/agent/orchestrator.py:197]\n2. `cmd_parse` [src/code_guard/cli/main.py:28]\n3. `VersionDiffer._parse_ref` [src/code_gua",
       "score": 1.0
     },
     {
@@ -172,7 +173,7 @@
       "confidence": 1.0,
       "passed_gate": true,
       "has_speculative": false,
-      "raw_answer": "根据提供的图数据，有以下与 `impact` 相关的函数：\n\n1. `GraphQueryTool.analyze_impact` [D:/Project/CodeGuard/code-guard/src/code_guard/agent/tools.py:35]\n2. `cmd_impact` [D:/Project/CodeGuard/code-guard/src/code_guard/cli",
+      "raw_answer": "根据提供的图数据，有以下几个与 `impact` 相关的函数：\n\n1. `GraphQueryTool.analyze_impact` 位于文件 `src/code_guard/agent/tools.py` 的第 35 行 [src/code_guard/agent/tools.py:35]\n2. `cmd_impact` 位于文件 `src/code_guard/cli/main.py` 的第",
       "score": 1.0
     },
     {
@@ -194,9 +195,9 @@
       "min_count": 0,
       "confidence": 1.0,
       "passed_gate": true,
-      "has_speculative": true,
-      "raw_answer": "`CodeGraph.analyze_change_impact` 方法用于执行变更影响分析，特别是反向可达性分析。该方法帮助确定当某个函数被修改时，哪些其他函数或测试可能会受到影响。以下是关于此方法的详细信息：\n\n- **功能描述**：通过反向追踪调用链来识别所有可能受到指定函数修改影响的函数和测试 [code_graph.py:356-414]。\n- **参数**：\n  - `function",
-      "score": 0.9
+      "has_speculative": false,
+      "raw_answer": "`CodeGraph.analyze_change_impact` 方法用于执行变更影响分析，特别是反向可达性分析。该方法帮助确定当修改了某个特定函数时，哪些其他函数或测试可能会受到影响。以下是关于此方法的详细信息：\n\n- **功能描述**：通过反向追踪调用链来识别所有可能受到指定函数修改影响的函数和测试案例 [src/code_guard/graph/code_graph.py:423-481]",
+      "score": 1.0
     },
     {
       "question_id": 9,
@@ -215,11 +216,11 @@
       "count_check": true,
       "result_count": 0,
       "min_count": 0,
-      "confidence": 1.0,
-      "passed_gate": true,
+      "confidence": 0.0,
+      "passed_gate": false,
       "has_speculative": true,
-      "raw_answer": "`parse_project` 函数的详细信息如下：\n\n- **位置**: 该函数位于文件 `D:/Project/CodeGuard/code-guard/src/code_guard/parser/ast_parser.py` 中，从第 330 行到第 356 行 [文件名:行号]。\n- **功能描述**: 此函数用于递归地解析整个 Python 项目。[函数名]\n- **参数**:\n  - ",
-      "score": 0.9
+      "raw_answer": "`parse_project` 函数的详细信息如下：\n\n- **名称**: `parse_project`\n- **文件位置**: `src/code_guard/parser/ast_parser.py`\n- **起始行号**: 338\n- **结束行号**: 364\n- **文档字符串**:\n  ```python\n  \"\"\"\n  递归解析整个 Python 项目。\n\n  Args:\n    ",
+      "score": 0.7
     },
     {
       "question_id": 10,
@@ -234,12 +235,12 @@
       ],
       "keywords_missing": [],
       "count_check": true,
-      "result_count": 5,
+      "result_count": 6,
       "min_count": 1,
       "confidence": 1.0,
       "passed_gate": true,
       "has_speculative": false,
-      "raw_answer": "如果修改 `_query_graph` 方法，将会影响到以下调用方：\n\n1. **直接调用方**:\n   - `QualityGate.answer` [D:/Project/CodeGuard/code-guard/src/code_guard/quality_gate.py:137]\n\n2. **所有受影响的调用方**:\n   - `QualityGate.answer` [D:/Projec",
+      "raw_answer": "如果修改 `QualityGate._query_graph` 方法，将会影响到以下调用方：\n\n1. 直接调用方：\n   - `QualityGate.answer` [src/code_guard/quality_gate.py:137]\n\n2. 间接影响的调用方（通过直接调用方进一步传播）：\n   - `_ask` [run_injection_test.py:27, 深度2]\n   - `m",
       "score": 1.0
     },
     {
@@ -257,12 +258,12 @@
       ],
       "keywords_missing": [],
       "count_check": true,
-      "result_count": 29,
+      "result_count": 31,
       "min_count": 5,
       "confidence": 1.0,
       "passed_gate": true,
       "has_speculative": false,
-      "raw_answer": "`ast_parser.py` 文件中包含以下类和函数：\n\n### 类\n1. `FunctionInfo` [ast_parser.py:24-36]\n2. `ClassInfo` [ast_parser.py:39-54]\n3. `CallInfo` [ast_parser.py:57-68]\n4. `ImportInfo` [ast_parser.py:71-79]\n5. `ParseResu",
+      "raw_answer": "`ast_parser.py` 文件中包含以下类和函数：\n\n### 类\n1. **FunctionInfo** [src/code_guard/parser/ast_parser.py:32-44]\n2. **ClassInfo** [src/code_guard/parser/ast_parser.py:47-62]\n3. **CallInfo** [src/code_guard/parser/",
       "score": 1.0
     },
     {
@@ -284,7 +285,7 @@
       "confidence": 1.0,
       "passed_gate": true,
       "has_speculative": false,
-      "raw_answer": "根据提供的图数据，CodeGuard 项目总共有24个类和194个函数。[stats]",
+      "raw_answer": "根据提供的图数据，CodeGuard 项目总共有28个类和270个函数。[stats]",
       "score": 1.0
     }
   ]
