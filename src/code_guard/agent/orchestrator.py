@@ -434,6 +434,11 @@ class AgentOrchestrator:
           unresolved   LLM 明确说"无法确定/未找到/数据不足"
           no_citation  回答无任何 [引用]，且问题明确指向某函数/文件
         """
+        # 工具报错也是"数据不足"信号：某步工具返回 {"error":...} → 回炉换一种方式查
+        for _s in steps_taken:
+            _r = _s.get("result")
+            if isinstance(_r, dict) and _r.get("error"):
+                return "tool_error"
         if re.search(r"__truncated__|已省略|截断", steps_summary):
             return "truncated"
         if _UNRESOLVED_RE.search(synthesis):
@@ -477,6 +482,16 @@ class AgentOrchestrator:
                 "args": {},
                 "purpose": "补充范围统计，避免无法确定全貌",
             })
+
+        if reason == "tool_error":
+            # 工具报错 → 换一种工具重查目标（原工具失败往往只是查询路径不对）
+            kw = extract_raw_keyword(question)
+            if kw and "get_detail" not in seen_tools:
+                plan.append({
+                    "step": 103, "tool": "get_detail",
+                    "args": {"function_name": kw},
+                    "purpose": f"换方式重查 {kw} 的详情",
+                })
 
         return plan[:2]
 
