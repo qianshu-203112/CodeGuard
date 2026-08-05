@@ -139,10 +139,12 @@ class AgentOrchestrator:
 
     def __init__(self, graph: Optional[CodeGraph] = None,
                  results: Optional[dict] = None,
-                 project_path: str = ""):
+                 project_path: str = "",
+                 trace_path: str = ""):
         self.graph = graph
         self.results = results or {}
         self.project_path = project_path
+        self.trace_path = trace_path  # 非空时把每次决策事件写 JSONL（可观测性）
         self.client = OpenAI(api_key=settings.LLM_API_KEY,
                              base_url=settings.LLM_BASE_URL)
         self.model = settings.LLM_MODEL
@@ -235,6 +237,14 @@ class AgentOrchestrator:
         def emit(event: str, data=None):
             if on_event:
                 on_event(event, data)
+            if self.trace_path:
+                try:
+                    with open(self.trace_path, "a", encoding="utf-8") as _tf:
+                        _tf.write(json.dumps(
+                            {"event": event, "data": data},
+                            ensure_ascii=False, default=str) + "\n")
+                except Exception:  # noqa: BLE001  (trace 写入失败不影响回答)
+                    pass
 
         # ── 阶段 1: 规划 ──
         tools_desc = self._get_tools_desc()

@@ -315,6 +315,7 @@ def main():
     p.add_argument("path", help="项目路径")
     p.add_argument("question", help="你的问题")
     p.add_argument("--plan", action="store_true", help="显示执行计划")
+    p.add_argument("--trace", default="", help="把每次决策事件写进 JSONL 文件（可观测性）")
 
     # index
     p = subparsers.add_parser("index", help="向量索引项目代码（Chroma 语义搜索）")
@@ -361,9 +362,12 @@ def main():
         graph = CodeGraph()
         graph.load_project(results)
 
-        orch = AgentOrchestrator(graph, results, project_path=args.path)
+        orch = AgentOrchestrator(graph, results, project_path=args.path,
+                                 trace_path=getattr(args, "trace", "") or "")
         answer = orch.answer(args.question)
         graph.close()
+        if orch.trace_path:
+            print(f"\n决策 trace 已写入: {orch.trace_path}")
 
         print(f"\n回答:\n{answer['answer']}")
         if getattr(args, 'plan', False):
